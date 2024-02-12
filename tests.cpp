@@ -14,12 +14,7 @@ namespace Audio
     };
     using AudioInstancePtr = std::shared_ptr<AudioInstance>;
 
-    struct Format
-    {
-        ma_uint32 numChannels;
-        ma_uint32 sampleRate;
-    }
-
+    // VDM: THIS IS ALREADY WHAT ma_engine IS DOING!!
     class EasyAPI
     {
     public:

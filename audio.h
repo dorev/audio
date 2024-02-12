@@ -44,6 +44,188 @@ if (!(condition)) \
 
 namespace Audio
 {
+    struct Format
+    {
+        ma_uint32 numChannels;
+        ma_uint32 sampleRate;
+        ma_format format;
+
+        Format(ma_uint32 numChannels = 0, ma_uint32 sampleRate = 0, ma_format format = ma_format_f32)
+            : numChannels(numChannels)
+            , sampleRate(sampleRate)
+            , format(format)
+        {
+        }
+    };
+
+    class Decoder
+    {
+    public:
+        ~Decoder()
+        {
+            ma_decoder_uninit(miniaudioInstance());
+        }
+
+        ma_result Init(const char* filePath, Format format = Format())
+        {
+            ma_decoder_config config = ma_decoder_config_init(format.format, format.numChannels, format.sampleRate);
+            return ma_decoder_init_file(filePath, &config, miniaudioInstance());
+        }
+
+        ma_result Init(const void* data, size_t dataSize, Format format = Format())
+        {
+            ma_decoder_config config = ma_decoder_config_init(format.format, format.numChannels, format.sampleRate);
+            return ma_decoder_init_memory(data, dataSize, &config, miniaudioInstance());
+        }
+
+        Format GetFormat() const
+        {
+            return Format(_Decoder.outputChannels, _Decoder.outputSampleRate, _Decoder.outputFormat);
+        }
+
+        ma_result Read(void* buffer, size_t frameCount, size_t* framesRead)
+        {
+            return ma_decoder_read_pcm_frames(miniaudioInstance(), buffer, frameCount, framesRead);
+        };
+
+        ma_result Seek(size_t targetFrame)
+        {
+            return ma_decoder_seek_to_pcm_frame(miniaudioInstance(), targetFrame);
+        }
+        
+        ma_result GetAvailableFrames(size_t* availableFrames)
+        {
+            return ma_decoder_get_available_frames(miniaudioInstance(), availableFrames);
+        }
+
+        ma_result GetCursor(size_t* cursor)
+        {
+            return ma_decoder_get_cursor_in_pcm_frames(miniaudioInstance(), cursor);
+        }
+
+        ma_result GetLength(size_t* length)
+        {
+            return ma_decoder_get_length_in_pcm_frames(miniaudioInstance(), length);
+        }
+
+        ma_result GetAvailableFrames(size_t* availableFrames)
+        {
+            return ma_decoder_get_available_frames(miniaudioInstance(), availableFrames);
+        }
+
+        ma_decoder* miniaudioInstance()
+        {
+            return &_Decoder;
+        }
+
+        ma_result Decode(std::vector<float>& samples, size_t fromFrame = 0, size_t numFrames = 0)
+        {
+            if (fromFrame > 0)
+                CHECK_RETURN(Seek(fromFrame));
+
+            samples.clear();
+
+            constexpr size_t kDecoderBufferSize = 4096;
+            float buffer[kDecoderBufferSize];
+            size_t framesPerBuffer = sizeof(buffer) / sizeof(buffer[0]);
+            size_t totalFramesRead = 0;
+            size_t framesRead = 0;
+            while (true)
+            {
+                size_t framesToRead = numFrames > 0
+                    ? std::min(framesPerBuffer, numFrames - totalFramesRead)
+                    : std::numeric_limits<size_t>::max();
+
+                ma_result result = Read(buffer, framesToRead, &framesRead);
+                if (result == MA_SUCCESS || result == MA_AT_END) 
+                {
+                    totalFramesRead += framesRead;
+
+                    samples.insert(samples.end(), buffer, buffer + framesRead);
+                    if (result == MA_AT_END || totalFramesRead == numFrames)
+                        return MA_SUCCESS;
+                }
+                else
+                {
+                    return result;
+                }
+            }
+        }
+
+    private:
+        ma_decoder _Decoder;
+    };
+
+    class NodeBase
+    {
+    public:
+        NodeBase(ma_node_graph* graph, size_t numInputBus = 0, size_t numOutputBus = 0, ma_uint32 flags = 0)
+            : _VTable
+            {
+                NodeBase::ProcessCallback,
+                NodeBase::GetRequiredInputFrameCountCallback,
+                0, // numInputBus
+                0, // numOutputBus
+                0  // flags
+            }
+        {
+            _Proxy.thisNode = this;
+        }
+
+        ma_result Init(ma_node_graph* graph, ma_uint8 numInputBus = 0, ma_uint8 numOutputBus = 0, ma_uint32 flags = 0)
+        {
+            _VTable.inputBusCount = numInputBus;
+            _VTable.outputBusCount = numOutputBus;
+            _VTable.flags = flags;
+
+            ma_node_config config = ma_node_config_init();
+            config.vtable = &_VTable;
+            return ma_node_init(graph, &config, nullptr, miniaudioInstance());
+        }
+
+        virtual ~NodeBase()
+        {
+            ma_node_uninit(miniaudioInstance(), nullptr);
+        }
+
+        ma_node* miniaudioInstance()
+        {
+            return reinterpret_cast<ma_node*>(&_Proxy);
+        }
+
+    private:
+        ma_node_vtable _VTable;
+        ma_node_graph* _Graph;
+        struct Proxy
+        {
+            ma_node_base base;
+            void* thisNode;
+        } _Proxy;
+
+        static NodeBase* CastToThis(ma_node* node)
+        {
+            return static_cast<NodeBase*>(reinterpret_cast<NodeBase::Proxy*>(node)->thisNode);
+        }
+
+        static void ProcessCallback(ma_node* node, const float** inputBuffers, ma_uint32* numInputFrames, float** outputBuffers, ma_uint32* numOutputFrames)
+        {
+            if (NodeBase* nodeBase = CastToThis(node))
+                nodeBase->Process(inputBuffers, numInputFrames, outputBuffers, numOutputFrames);
+        }
+
+        static ma_result GetRequiredInputFrameCountCallback(ma_node* node, ma_uint32 numOutputFrames, ma_uint32* numInputFrames)
+        {
+            if (NodeBase* nodeBase = CastToThis(node))
+                return nodeBase->GetRequiredInputFrameCount(numOutputFrames, numInputFrames);
+            return MA_INVALID_DATA;
+        }
+
+    protected:
+        virtual void Process(const float** inputBuffers, ma_uint32* numInputFrames, float** outputBuffers, ma_uint32* numOutputFrames) = 0;
+        virtual ma_result GetRequiredInputFrameCount(ma_uint32 numOutputFrames, ma_uint32* numInputFrames) = 0;
+    };
+    using NodePtr = std::shared_ptr<NodeBase>;
+
     class DataSourceBase
     {
         ma_data_source_vtable _VTable;
@@ -148,156 +330,6 @@ namespace Audio
     };
     using DataSourcePtr = std::shared_ptr<DataSourceBase>;
 
-    class Decoder
-    {
-    public:
-        ma_result Init(const char* filePath, ma_uint32 numChannels = 0, ma_uint32 sampleRate = 0)
-        {
-            ma_decoder_config config = ma_decoder_config_init(ma_format_f32, numChannels, sampleRate);
-            return ma_decoder_init_file(filePath, &config, miniaudioInstance());
-        }
-
-        ~Decoder()
-        {
-            ma_decoder_uninit(miniaudioInstance());
-        }
-
-        ma_result Init(const void* data, size_t dataSize, ma_uint32 numChannels = 0, ma_uint32 sampleRate = 0)
-        {
-            ma_decoder_config config = ma_decoder_config_init(ma_format_f32, numChannels, sampleRate);
-            return ma_decoder_init_memory(data, dataSize, &config, miniaudioInstance());
-        }
-
-        ma_result Seek(size_t targetFrame)
-        {
-            return ma_decoder_seek_to_pcm_frame(miniaudioInstance(), targetFrame);
-        }
-
-        size_t GetNumChannels() const
-        {
-            return _Decoder.outputChannels;
-        }
-
-        size_t GetSampleRate() const
-        {
-            return _Decoder.outputSampleRate;
-        }
-
-        ma_result Decode(std::vector<float>& samples, size_t fromFrame = 0, size_t numFrames = 0)
-        {
-            if (fromFrame > 0)
-                CHECK_RETURN(Seek(fromFrame));
-
-            samples.clear();
-
-            constexpr size_t kDecoderBufferSize = 4096;
-            float buffer[kDecoderBufferSize];
-            size_t framesPerBuffer = sizeof(buffer) / sizeof(buffer[0]);
-            size_t totalFramesRead = 0;
-            size_t framesRead = 0;
-            while (true)
-            {
-                size_t framesToRead = numFrames > 0
-                    ? std::min(framesPerBuffer, numFrames - totalFramesRead)
-                    : std::numeric_limits<size_t>::max();
-
-                ma_result result = ma_decoder_read_pcm_frames(miniaudioInstance(), buffer, framesToRead, &framesRead);
-                if (result == MA_SUCCESS || result == MA_AT_END) 
-                {
-                    totalFramesRead += framesRead;
-
-                    samples.insert(samples.end(), buffer, buffer + framesRead);
-                    if (result == MA_AT_END || totalFramesRead == numFrames)
-                        return MA_SUCCESS;
-                }
-                else
-                {
-                    return result;
-                }
-            }
-        }
-
-        ma_decoder* miniaudioInstance()
-        {
-            return &_Decoder;
-        }
-
-    private:
-        ma_decoder _Decoder;
-    };
-
-
-    class NodeBase
-    {
-    public:
-        NodeBase(ma_node_graph* graph, size_t numInputBus = 0, size_t numOutputBus = 0, ma_uint32 flags = 0)
-            : _VTable
-            {
-                NodeBase::ProcessCallback,
-                NodeBase::GetRequiredInputFrameCountCallback,
-                0, // numInputBus
-                0, // numOutputBus
-                0  // flags
-            }
-        {
-            _Proxy.thisNode = this;
-        }
-
-        ma_result Init(ma_node_graph* graph, ma_uint8 numInputBus = 0, ma_uint8 numOutputBus = 0, ma_uint32 flags = 0)
-        {
-            _VTable.inputBusCount = numInputBus;
-            _VTable.outputBusCount = numOutputBus;
-            _VTable.flags = flags;
-
-            ma_node_config config = ma_node_config_init();
-            config.vtable = &_VTable;
-            return ma_node_init(graph, &config, nullptr, miniaudioInstance());
-        }
-
-        virtual ~NodeBase()
-        {
-            ma_node_uninit(miniaudioInstance(), nullptr);
-        }
-
-        ma_node* miniaudioInstance()
-        {
-            return reinterpret_cast<ma_node*>(&_Proxy);
-        }
-
-    private:
-        ma_node_vtable _VTable;
-        ma_node_graph* _Graph;
-        struct Proxy
-        {
-            ma_node_base base;
-            void* thisNode;
-        } _Proxy;
-
-        static NodeBase* CastToThis(ma_node* node)
-        {
-            return static_cast<NodeBase*>(reinterpret_cast<NodeBase::Proxy*>(node)->thisNode);
-        }
-
-        static void ProcessCallback(ma_node* node, const float** inputBuffers, ma_uint32* numInputFrames, float** outputBuffers, ma_uint32* numOutputFrames)
-        {
-            if (NodeBase* nodeBase = CastToThis(node))
-                nodeBase->Process(inputBuffers, numInputFrames, outputBuffers, numOutputFrames);
-        }
-
-        static ma_result GetRequiredInputFrameCountCallback(ma_node* node, ma_uint32 numOutputFrames, ma_uint32* numInputFrames)
-        {
-            if (NodeBase* nodeBase = CastToThis(node))
-                return nodeBase->GetRequiredInputFrameCount(numOutputFrames, numInputFrames);
-            return MA_INVALID_DATA;
-        }
-
-    protected:
-        virtual void Process(const float** inputBuffers, ma_uint32* numInputFrames, float** outputBuffers, ma_uint32* numOutputFrames) = 0;
-        virtual ma_result GetRequiredInputFrameCount(ma_uint32 numOutputFrames, ma_uint32* numInputFrames) = 0;
-    };
-
-    using NodePtr = std::shared_ptr<NodeBase>;
-
     class DataSourceNode
     {
     public:
@@ -382,25 +414,48 @@ namespace Audio
         ma_node_graph _Graph;
     };
 
-    class RenderDevice
+    class DeviceBase
     {
     public:
-        ma_result Init()
+        ma_result Init(ma_device_type deviceType = ma_device_type_playback, ma_uint32 numChannels = 0, ma_uint32 sampleRate = 0, ma_format format = ma_format_f32)
         {
-            ma_device_config deviceConfig = ma_device_config_init(ma_device_type_playback);
-            deviceConfig.playback.format = ma_format_f32;
-            deviceConfig.playback.channels = 2;
-            deviceConfig.sampleRate = 44100;
-            deviceConfig.dataCallback = RenderDevice::DataCallback;
-            deviceConfig.pUserData = this;
+            ma_device_config config = ma_device_config_init(deviceType);
+            switch (deviceType)
+            {
+            case ma_device_type_playback:
+                config.playback.format = format;
+                config.playback.channels = numChannels;
+                break;
+            case ma_device_type_capture:
+            case ma_device_type_loopback:
+                config.capture.format = format;
+                config.capture.channels = numChannels;
+                break;
+            case ma_device_type_duplex:
+                config.playback.format = format;
+                config.playback.channels = numChannels;
+                config.capture.format = format;
+                config.capture.channels = numChannels;
+                break;
+            default:
+                return MA_DEVICE_TYPE_NOT_SUPPORTED;
+            }
 
-            ma_result result = ma_device_init(NULL, &deviceConfig, miniaudioInstance());
-            CHECK_RETURN(result);
+            config.sampleRate = sampleRate;
+            config.dataCallback = DeviceBase::StaticDataCallback;
+            config.pUserData = this;
 
-            result = ma_device_start(miniaudioInstance());
-            CHECK_RETURN(result);
+            return ma_device_init(NULL, &config, miniaudioInstance());
+        }
 
-            return MA_SUCCESS;
+        ma_result Start()
+        {
+            return ma_device_start(miniaudioInstance());
+        }
+
+        ma_result Stop()
+        {
+            return ma_device_stop(miniaudioInstance());
         }
 
         void Shutdown()
@@ -408,9 +463,21 @@ namespace Audio
             ma_device_uninit(miniaudioInstance());
         }
 
-        size_t FrameSize() const
+        size_t FrameSize(ma_device_type deviceType = ma_device_type_playback) const
         {
-            return ma_get_bytes_per_frame(_Device.playback.format, _Device.playback.channels);
+            switch (deviceType)
+            {
+            case ma_device_type_playback:
+                return ma_get_bytes_per_frame(_Device.playback.format, _Device.playback.channels);
+
+            case ma_device_type_capture:
+            case ma_device_type_loopback:
+                return ma_get_bytes_per_frame(_Device.capture.format, _Device.capture.channels);
+
+            case ma_device_type_duplex:
+            default:
+                return MA_DEVICE_TYPE_NOT_SUPPORTED;
+            }
         }
 
         ma_device* miniaudioInstance()
@@ -418,41 +485,42 @@ namespace Audio
             return &_Device;
         }
 
+        virtual void DataCallback(void* renderBuffer, const void* captureBuffer, ma_uint32 numFrames) = 0;
+
     private:
-        static RenderDevice* CastToThis(ma_device* device)
+        static DeviceBase* CastToThis(ma_device* device)
         {
-            return reinterpret_cast<RenderDevice*>(device->pUserData);
+            return reinterpret_cast<DeviceBase*>(device->pUserData);
         }
 
-        static void DataCallback(ma_device* device, void* renderBuffer, const void* /*captureBuffer*/, ma_uint32 numFrames)
+        static void StaticDataCallback(ma_device* device, void* renderBuffer, const void* captureBuffer, ma_uint32 numFrames)
         {
-            if (RenderDevice* renderDevice = CastToThis(device))
-                renderDevice->DeviceDataCallback(device, renderBuffer, numFrames);
+            if (DeviceBase* deviceBase = CastToThis(device))
+                deviceBase->DataCallback(renderBuffer, captureBuffer, numFrames);
         }
 
-        void DeviceDataCallback(ma_device* maDevice, void* renderBuffer, size_t numFrames)
-        {
-            size_t framesRead;
-            ma_result result = _Graph.Read(renderBuffer, numFrames, &framesRead);
-
-            if (result != MA_SUCCESS)
-            {
-                ma_zero_memory_default(renderBuffer, numFrames * FrameSize());
-                return;
-            }
-
-            if (framesRead < numFrames)
-            {
-                size_t bytesToZero = (numFrames - framesRead) * FrameSize();
-                size_t offset = framesRead * FrameSize();
-                renderBuffer = static_cast<void*>(static_cast<unsigned char*>(renderBuffer) + offset);
-                ma_zero_memory_default(renderBuffer, bytesToZero);
-            }
-        }
+        // VDM : first implementation attempt
+        // void DeviceDataCallback(void* renderBuffer, size_t numFrames)
+        // {
+        //     size_t framesRead;
+        //     ma_result result = _Graph.Read(renderBuffer, numFrames, &framesRead);
+        //     if (result != MA_SUCCESS)
+        //     {
+        //         ma_zero_memory_default(renderBuffer, numFrames * FrameSize());
+        //         return;
+        //     }
+        //     if (framesRead < numFrames)
+        //     {
+        //         size_t bytesToZero = (numFrames - framesRead) * FrameSize();
+        //         size_t offset = framesRead * FrameSize();
+        //         renderBuffer = static_cast<void*>(static_cast<unsigned char*>(renderBuffer) + offset);
+        //         ma_zero_memory_default(renderBuffer, bytesToZero);
+        //     }
+        // }
+        // Graph _Graph;
 
     private:
         ma_device _Device;
-        Graph _Graph;
     };
 
     class PCMData
@@ -460,12 +528,11 @@ namespace Audio
     public:
         PCMData()
             : _Samples()
-            , _NumChannels()
-            , _SampleRate()
+            , _Format()
         {
         }
 
-        std::vector<float>& GetSamplesForEdit()
+        std::vector<float>& GetSamplesForWriting()
         {
             return _Samples;
         }
@@ -477,35 +544,24 @@ namespace Audio
 
         const size_t GetNumFrames() const
         {
-            if (_NumChannels == 0)
+            if (_Format.numChannels == 0)
                 return 0;
-            return _Samples.size() / _NumChannels;
+            return _Samples.size() / _Format.numChannels;
         }
 
-        ma_uint32 GetNumChannels() const
+        const Format& GetFormat() const
         {
-            return _NumChannels;
+            return _Format;
         }
 
-        void SetNumChannels(ma_uint32 numChannels)
+        void SetFormat(Format format)
         {
-            _NumChannels = numChannels;
-        }
-
-        ma_uint32 GetSampleRate() const
-        {
-            return _SampleRate;
-        }
-
-        void SetSampleRate(ma_uint32 sampleRate)
-        {
-            _SampleRate = sampleRate;
+            _Format = format;
         }
 
     private:
         std::vector<float> _Samples;
-        ma_uint32 _NumChannels;
-        ma_uint32 _SampleRate;
+        Format _Format;
     };
     using PCMDataPtr = std::shared_ptr<PCMData>;
 
@@ -527,17 +583,16 @@ namespace Audio
         {
         }
 
-        ma_result Init(ma_uint32 numChannels = 0, ma_uint32 sampleRate = 0)
+        ma_result Init(Format format = Format())
         {
-            ma_result result = _Decoder.Init(_FilePath.c_str(), numChannels, sampleRate);
+            ma_result result = _Decoder.Init(_FilePath.c_str(), format);
             CHECK_RETURN(result);
-            _PCMData.SetNumChannels(_Decoder.GetNumChannels());
-            _PCMData.SetSampleRate(_Decoder.GetSampleRate());
+            _PCMData.SetFormat(_Decoder.GetFormat());
         }
 
         ma_result Load()
         {
-            return _Decoder.Decode(_PCMData.GetSamplesForEdit());
+            return _Decoder.Decode(_PCMData.GetSamplesForWriting());
         }
 
     private:
@@ -580,7 +635,7 @@ namespace Audio
             }
 
             const std::vector<float>& samples = _CurrentData->GetSamples();
-            const size_t numChannels = _CurrentData->GetNumChannels();
+            const size_t numChannels = _CurrentData->GetFormat().numChannels;
             const size_t totalFrames = _CurrentData->GetNumFrames();
             float* outBuffer = static_cast<float*>(buffer);
 
@@ -649,6 +704,7 @@ namespace Audio
         PCMDataPtr _NextData;
         std::mutex _NextDataMutex;
     };
+
     class System
     {
     public:
@@ -656,7 +712,7 @@ namespace Audio
         {
             if (_Devices.empty())
             {
-                RenderDevice& device = *_Devices.emplace_back(std::make_unique<RenderDevice>());
+                DeviceBase& device = *_Devices.emplace_back(std::make_unique<DeviceBase>());
                 return device.Init();
             }
             return MA_SUCCESS;
@@ -668,8 +724,7 @@ namespace Audio
         }
 
     private:
-        std::vector<std::unique_ptr<RenderDevice>> _Devices;
+        std::vector<std::unique_ptr<DeviceBase>> _Devices;
         std::vector<AssetPtr> _Assets;
-
     };
 }
