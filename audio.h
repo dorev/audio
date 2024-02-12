@@ -148,165 +148,84 @@ namespace Audio
     };
     using DataSourcePtr = std::shared_ptr<DataSourceBase>;
 
-    class PCMData
+    class Decoder
     {
     public:
-        PCMData()
-            : _Samples()
-            , _NumChannels()
-            , _SampleRate()
-            , _IsLoaded(false)
+        ma_result Init(const char* filePath, ma_uint32 numChannels = 0, ma_uint32 sampleRate = 0)
         {
+            ma_decoder_config config = ma_decoder_config_init(ma_format_f32, numChannels, sampleRate);
+            return ma_decoder_init_file(filePath, &config, miniaudioInstance());
         }
 
-        bool IsLoaded() const
+        ~Decoder()
         {
-            return _IsLoaded;
+            ma_decoder_uninit(miniaudioInstance());
         }
 
-        void SetIsLoaded(bool isLoaded)
+        ma_result Init(const void* data, size_t dataSize, ma_uint32 numChannels = 0, ma_uint32 sampleRate = 0)
         {
-            _IsLoaded = isLoaded;
+            ma_decoder_config config = ma_decoder_config_init(ma_format_f32, numChannels, sampleRate);
+            return ma_decoder_init_memory(data, dataSize, &config, miniaudioInstance());
         }
 
-        void SetFormat(size_t numChannels, size_t sampleRate)
+        ma_result Seek(size_t targetFrame)
         {
-            _NumChannels = numChannels;
-            _SampleRate = sampleRate;
-        }
-
-        const std::vector<float>& GetSamples() const
-        {
-            return _Samples;
-        }
-
-        std::vector<float>& GetSamplesForEdit()
-        {
-            return _Samples;
-        }
-
-        const size_t GetLengthInFrames() const
-        {
-            if (!_IsLoaded || _NumChannels == 0)
-                return 0;
-            return _Samples.size() / _NumChannels;
+            return ma_decoder_seek_to_pcm_frame(miniaudioInstance(), targetFrame);
         }
 
         size_t GetNumChannels() const
         {
-            return _NumChannels;
+            return _Decoder.outputChannels;
+        }
+
+        size_t GetSampleRate() const
+        {
+            return _Decoder.outputSampleRate;
+        }
+
+        ma_result Decode(std::vector<float>& samples, size_t fromFrame = 0, size_t numFrames = 0)
+        {
+            if (fromFrame > 0)
+                CHECK_RETURN(Seek(fromFrame));
+
+            samples.clear();
+
+            constexpr size_t kDecoderBufferSize = 4096;
+            float buffer[kDecoderBufferSize];
+            size_t framesPerBuffer = sizeof(buffer) / sizeof(buffer[0]);
+            size_t totalFramesRead = 0;
+            size_t framesRead = 0;
+            while (true)
+            {
+                size_t framesToRead = numFrames > 0
+                    ? std::min(framesPerBuffer, numFrames - totalFramesRead)
+                    : std::numeric_limits<size_t>::max();
+
+                ma_result result = ma_decoder_read_pcm_frames(miniaudioInstance(), buffer, framesToRead, &framesRead);
+                if (result == MA_SUCCESS || result == MA_AT_END) 
+                {
+                    totalFramesRead += framesRead;
+
+                    samples.insert(samples.end(), buffer, buffer + framesRead);
+                    if (result == MA_AT_END || totalFramesRead == numFrames)
+                        return MA_SUCCESS;
+                }
+                else
+                {
+                    return result;
+                }
+            }
+        }
+
+        ma_decoder* miniaudioInstance()
+        {
+            return &_Decoder;
         }
 
     private:
-        std::vector<float> _Samples;
-        size_t _NumChannels;
-        size_t _SampleRate;
-        bool _IsLoaded;
+        ma_decoder _Decoder;
     };
-    using PCMDataPtr = std::shared_ptr<PCMData>;
 
-    class PCMDataSource : public DataSourceBase
-    {
-    public:
-        PCMDataSource(PCMDataPtr pcmData = nullptr)
-            : _CurrentData(pcmData)
-            , _NextData(nullptr)
-        {
-        }
-
-        void Reset(PCMDataPtr pcmData)
-        {
-            std::lock_guard lock(_NextDataMutex);
-            _NextData = pcmData;
-            _Cursor = 0;
-        }
-
-    private:
-        ma_result Read(void* buffer, ma_uint64 numFrames, ma_uint64* framesRead) override
-        {
-            {
-                std::lock_guard lock(_NextDataMutex);
-                if (_NextData)
-                    _CurrentData = _NextData;
-                _NextData = nullptr;
-            }
-
-            if (_CurrentData == nullptr || (_CurrentData && (!_CurrentData->IsLoaded() || _CurrentData->GetSamples().empty())))
-            {
-                *framesRead = 0;
-                return MA_NO_DATA_AVAILABLE;
-            }
-
-            const std::vector<float>& samples = _CurrentData->GetSamples();
-            const size_t numChannels = _CurrentData->GetNumChannels();
-            const size_t totalFrames = _CurrentData->GetLengthInFrames();
-            float* outBuffer = static_cast<float*>(buffer);
-
-            size_t framesToRead = numFrames;
-            *framesRead = 0;
-
-            while (framesToRead > 0)
-            {
-                size_t currentFrame = _Cursor % totalFrames;
-                size_t framesAvailable = totalFrames - currentFrame;
-                size_t framesToCopy = std::min(framesAvailable, framesToRead);
-
-                std::memcpy(outBuffer, samples.data() + currentFrame * numChannels, framesToCopy * numChannels * sizeof(float));
-
-                *framesRead += framesToCopy;
-                framesToRead -= framesToCopy;
-                outBuffer += framesToCopy * numChannels;
-                _Cursor += framesToCopy;
-
-                if (!_IsLooping || framesToCopy == 0)
-                    break;
-            }
-
-            if (_IsLooping && framesToRead > 0)
-            {
-                _Cursor = 0;
-                return Read(buffer, framesToRead, framesRead);
-            }
-
-            return MA_SUCCESS;
-        }
-
-        ma_result Seek(ma_uint64 frameIndex) override
-        {
-            _Cursor = frameIndex;
-            return MA_SUCCESS;
-        }
-
-        ma_result GetDataFormat(ma_format* format, ma_uint32* numChannels, ma_uint32* sampleRate, ma_channel* channelMap, size_t channelMapCap) override
-        {
-            return MA_SUCCESS;
-        }
-
-        ma_result GetCursor(ma_uint64* cursor) override
-        {
-            *cursor = _Cursor;
-            return MA_SUCCESS;
-        }
-
-        ma_result GetLength(ma_uint64* length) override
-        {
-            *length = _CurrentData ? _CurrentData->GetLengthInFrames() : 0;
-            return MA_SUCCESS;
-        }
-
-        ma_result SetLooping(ma_bool32 isLooping) override
-        {
-            _IsLooping = isLooping;
-            return MA_SUCCESS;
-        }
-
-    private:
-        size_t _Cursor;
-        bool _IsLooping;
-        PCMDataPtr _CurrentData;
-        PCMDataPtr _NextData;
-        std::mutex _NextDataMutex;
-    };
 
     class NodeBase
     {
@@ -536,84 +455,200 @@ namespace Audio
         Graph _Graph;
     };
 
-    class FileDecoder
+    class PCMData
     {
     public:
-        ma_result Init(const char* filePath, ma_uint32 numChannels = 0, ma_uint32 sampleRate = 0)
+        PCMData()
+            : _Samples()
+            , _NumChannels()
+            , _SampleRate()
         {
-            ma_decoder_config config = ma_decoder_config_init(ma_format_f32, numChannels, sampleRate);
-            return ma_decoder_init_file(filePath, &config, miniaudioInstance());
         }
 
-        ~FileDecoder()
+        std::vector<float>& GetSamplesForEdit()
         {
-            ma_decoder_uninit(miniaudioInstance());
+            return _Samples;
         }
 
-        ma_result Init(const void* data, size_t dataSize, ma_uint32 numChannels = 0, ma_uint32 sampleRate = 0)
+        const std::vector<float>& GetSamples() const
         {
-            ma_decoder_config config = ma_decoder_config_init(ma_format_f32, numChannels, sampleRate);
-            return ma_decoder_init_memory(data, dataSize, &config, miniaudioInstance());
+            return _Samples;
         }
 
-        ma_result Seek(size_t targetFrame)
+        const size_t GetNumFrames() const
         {
-            return ma_decoder_seek_to_pcm_frame(miniaudioInstance(), targetFrame);
+            if (_NumChannels == 0)
+                return 0;
+            return _Samples.size() / _NumChannels;
         }
 
-        size_t GetNumChannels() const
+        ma_uint32 GetNumChannels() const
         {
-            return _Decoder.outputChannels;
+            return _NumChannels;
         }
 
-        size_t GetSampleRate() const
+        void SetNumChannels(ma_uint32 numChannels)
         {
-            return _Decoder.outputSampleRate;
+            _NumChannels = numChannels;
         }
 
-        ma_result Decode(std::vector<float>& samples, size_t fromFrame = 0, size_t numFrames = 0)
+        ma_uint32 GetSampleRate() const
         {
-            if (fromFrame > 0)
-                CHECK_RETURN(Seek(fromFrame));
-
-            samples.clear();
-
-            constexpr size_t kDecoderBufferSize = 4096;
-            float buffer[kDecoderBufferSize];
-            size_t framesPerBuffer = sizeof(buffer) / sizeof(buffer[0]);
-            size_t totalFramesRead = 0;
-            size_t framesRead = 0;
-            while (true)
-            {
-                size_t framesToRead = numFrames > 0
-                    ? std::min(framesPerBuffer, numFrames - totalFramesRead)
-                    : std::numeric_limits<size_t>::max();
-
-                ma_result result = ma_decoder_read_pcm_frames(miniaudioInstance(), buffer, framesToRead, &framesRead);
-                if (result == MA_SUCCESS || result == MA_AT_END) 
-                {
-                    totalFramesRead += framesRead;
-
-                    samples.insert(samples.end(), buffer, buffer + framesRead);
-                    if (result == MA_AT_END || totalFramesRead == numFrames)
-                        return MA_SUCCESS;
-                }
-                else
-                {
-                    return result;
-                }
-            }
+            return _SampleRate;
         }
 
-        ma_decoder* miniaudioInstance()
+        void SetSampleRate(ma_uint32 sampleRate)
         {
-            return &_Decoder;
+            _SampleRate = sampleRate;
         }
 
     private:
-        ma_decoder _Decoder;
+        std::vector<float> _Samples;
+        ma_uint32 _NumChannels;
+        ma_uint32 _SampleRate;
     };
+    using PCMDataPtr = std::shared_ptr<PCMData>;
 
+    class Asset
+    {
+    public:
+        enum State
+        {
+            Unloaded,
+            Loading,
+            Loaded,
+            Streamed
+        };
+
+        Asset(const char* filePath)
+            : _FilePath(filePath)
+            , _Decoder()
+            , _PCMData()
+        {
+        }
+
+        ma_result Init(ma_uint32 numChannels = 0, ma_uint32 sampleRate = 0)
+        {
+            ma_result result = _Decoder.Init(_FilePath.c_str(), numChannels, sampleRate);
+            CHECK_RETURN(result);
+            _PCMData.SetNumChannels(_Decoder.GetNumChannels());
+            _PCMData.SetSampleRate(_Decoder.GetSampleRate());
+        }
+
+        ma_result Load()
+        {
+            return _Decoder.Decode(_PCMData.GetSamplesForEdit());
+        }
+
+    private:
+        std::string _FilePath;
+        Decoder _Decoder;
+        PCMData _PCMData;
+    };
+    using AssetPtr = std::shared_ptr<Asset>;
+
+    class PCMDataSource : public DataSourceBase
+    {
+    public:
+        PCMDataSource(PCMDataPtr pcmData = nullptr)
+            : _CurrentData(pcmData)
+            , _NextData(nullptr)
+        {
+        }
+
+        void Reset(PCMDataPtr pcmData)
+        {
+            std::lock_guard lock(_NextDataMutex);
+            _NextData = pcmData;
+            _Cursor = 0;
+        }
+
+    private:
+        ma_result Read(void* buffer, ma_uint64 numFrames, ma_uint64* framesRead) override
+        {
+            {
+                std::lock_guard lock(_NextDataMutex);
+                if (_NextData)
+                    _CurrentData = _NextData;
+                _NextData = nullptr;
+            }
+
+            if (_CurrentData == nullptr || (_CurrentData && _CurrentData->GetSamples().empty()))
+            {
+                *framesRead = 0;
+                return MA_NO_DATA_AVAILABLE;
+            }
+
+            const std::vector<float>& samples = _CurrentData->GetSamples();
+            const size_t numChannels = _CurrentData->GetNumChannels();
+            const size_t totalFrames = _CurrentData->GetNumFrames();
+            float* outBuffer = static_cast<float*>(buffer);
+
+            size_t framesToRead = numFrames;
+            *framesRead = 0;
+
+            while (framesToRead > 0)
+            {
+                size_t currentFrame = _Cursor % totalFrames;
+                size_t framesAvailable = totalFrames - currentFrame;
+                size_t framesToCopy = std::min(framesAvailable, framesToRead);
+
+                std::memcpy(outBuffer, samples.data() + currentFrame * numChannels, framesToCopy * numChannels * sizeof(float));
+
+                *framesRead += framesToCopy;
+                framesToRead -= framesToCopy;
+                outBuffer += framesToCopy * numChannels;
+                _Cursor += framesToCopy;
+
+                if (!_IsLooping || framesToCopy == 0)
+                    break;
+            }
+
+            if (_IsLooping && framesToRead > 0)
+            {
+                _Cursor = 0;
+                return Read(buffer, framesToRead, framesRead);
+            }
+
+            return MA_SUCCESS;
+        }
+
+        ma_result Seek(ma_uint64 frameIndex) override
+        {
+            _Cursor = frameIndex;
+            return MA_SUCCESS;
+        }
+
+        ma_result GetDataFormat(ma_format* format, ma_uint32* numChannels, ma_uint32* sampleRate, ma_channel* channelMap, size_t channelMapCap) override
+        {
+            return MA_SUCCESS;
+        }
+
+        ma_result GetCursor(ma_uint64* cursor) override
+        {
+            *cursor = _Cursor;
+            return MA_SUCCESS;
+        }
+
+        ma_result GetLength(ma_uint64* length) override
+        {
+            *length = _CurrentData ? _CurrentData->GetNumFrames() : 0;
+            return MA_SUCCESS;
+        }
+
+        ma_result SetLooping(ma_bool32 isLooping) override
+        {
+            _IsLooping = isLooping;
+            return MA_SUCCESS;
+        }
+
+    private:
+        size_t _Cursor;
+        bool _IsLooping;
+        PCMDataPtr _CurrentData;
+        PCMDataPtr _NextData;
+        std::mutex _NextDataMutex;
+    };
     class System
     {
     public:
@@ -621,7 +656,7 @@ namespace Audio
         {
             if (_Devices.empty())
             {
-                RenderDevice& device = _Devices.emplace_back();
+                RenderDevice& device = *_Devices.emplace_back(std::make_unique<RenderDevice>());
                 return device.Init();
             }
             return MA_SUCCESS;
@@ -633,7 +668,8 @@ namespace Audio
         }
 
     private:
-        std::vector<RenderDevice> _Devices;
+        std::vector<std::unique_ptr<RenderDevice>> _Devices;
+        std::vector<AssetPtr> _Assets;
 
     };
 }
