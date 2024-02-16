@@ -1,5 +1,5 @@
 #include "gtest/gtest.h"
-#include "audio.h"
+#include "miniaudio.hpp"
 
 class Tests : public ::testing::Test
 {
