@@ -11,39 +11,47 @@
 #undef max
 #endif
 
-#include <vector>
-#include <set>
-#include <algorithm>
-#include <memory>
-#include <mutex>
+//#include <set>
+//#include <mutex>
+//#include <algorithm>
 
-#define CHECK_RETURN(result) if ((result) != MA_SUCCESS) { return (result); }
+#define MACPP_CHECK_RESULT(result) if ((result) != MA_SUCCESS) { return (result); }
 #define UNUSED(variable) (void)variable
 
 #if defined(_MSC_VER)
-    #define AUDIO_DEBUG_BREAK() __debugbreak()
-    #define AUDIO_FUNCTION __FUNCSIG__
+    #define MACPP_DEBUG_BREAK() __debugbreak()
+    #define MACPP_FUNCTION __FUNCSIG__
 #elif defined(__GNUC__) || defined(__clang__)
-    #define AUDIO_DEBUG_BREAK() __builtin_trap()
-    #define AUDIO_FUNCTION __PRETTY_FUNCTION__
+    #define MACPP_DEBUG_BREAK() __builtin_trap()
+    #define MACPP_FUNCTION __PRETTY_FUNCTION__
 #else
-    #define AUDIO_DEBUG_BREAK() assert(false)
-    #define AUDIO_FUNCTION __FUNCTION__
+    #define MACPP_DEBUG_BREAK() assert(false)
+    #define MACPP_FUNCTION __FUNCTION__
 #endif
 
-#define AUDIO_LOG(format, ...) printf("[Audio] " format "\n", ##__VA_ARGS__)
-#define AUDIO_LOG_WARNING(format, ...) printf("[Audio] [WARNING] " format "  {%s}\n", AUDIO_FUNCTION, ##__VA_ARGS__)
-#define AUDIO_LOG_ERROR(format, ...) printf("[Audio] [ERROR] " format "  {%s, %s l.%d}\n", AUDIO_FUNCTION, ##__VA_ARGS__, __FILE__, __LINE__)
+#define MACPP_LOG(format, ...) printf("[Audio] " format "\n", ##__VA_ARGS__)
+#define MACPP_LOG_WARNING(format, ...) printf("[Audio] [WARNING] " format "  {%s}\n", MACPP_FUNCTION, ##__VA_ARGS__)
+#define MACPP_LOG_ERROR(format, ...) printf("[Audio] [ERROR] " format "  {%s, %s l.%d}\n", MACPP_FUNCTION, ##__VA_ARGS__, __FILE__, __LINE__)
 
-#define AUDIO_DEBUG_ASSERT(condition, format, ...) \
+#define MACPP_DEBUG_ASSERT(condition, format, ...) \
 if (!(condition)) \
 { \
-    AUDIO_LOG("[ASSERT] " format "\n", ##__VA_ARGS__); \
-    AUDIO_DEBUG_BREAK(); \
+    MACPP_LOG("[ASSERT] " format "\n", ##__VA_ARGS__); \
+    MACPP_DEBUG_BREAK(); \
 }
 
-namespace Audio
+#include <memory>
+#include <vector>
+
+namespace MiniaudioCpp
 {
+    template <class T>
+    using Vector = std::vector<T>;
+    template <class T>
+    using SharedPtr = std::shared_ptr<T>;
+
+
+
     struct Format
     {
         ma_uint32 channelCount;
@@ -58,24 +66,35 @@ namespace Audio
         }
     };
 
-    class Decoder
+    template <class T>
+    class MiniaudioObject
+    {
+    public:
+        virtual T* GetMiniaudioObject() = 0;
+
+        virtual ~MiniaudioObject()
+        {
+        };
+    };
+
+    class Decoder : public MiniaudioObject<ma_decoder>
     {
     public:
         ~Decoder()
         {
-            ma_decoder_uninit(miniaudioInstance());
+            ma_decoder_uninit(GetMiniaudioObject());
         }
 
         ma_result Init(const char* filePath, Format format = Format())
         {
             ma_decoder_config config = ma_decoder_config_init(format.format, format.channelCount, format.sampleRate);
-            return ma_decoder_init_file(filePath, &config, miniaudioInstance());
+            return ma_decoder_init_file(filePath, &config, GetMiniaudioObject());
         }
 
         ma_result Init(const void* data, size_t dataSize, Format format = Format())
         {
             ma_decoder_config config = ma_decoder_config_init(format.format, format.channelCount, format.sampleRate);
-            return ma_decoder_init_memory(data, dataSize, &config, miniaudioInstance());
+            return ma_decoder_init_memory(data, dataSize, &config, GetMiniaudioObject());
         }
 
         Format GetFormat() const
@@ -85,43 +104,38 @@ namespace Audio
 
         ma_result Read(void* buffer, size_t frameCount, size_t* framesRead)
         {
-            return ma_decoder_read_pcm_frames(miniaudioInstance(), buffer, frameCount, framesRead);
+            return ma_decoder_read_pcm_frames(GetMiniaudioObject(), buffer, frameCount, framesRead);
         };
 
         ma_result Seek(size_t targetFrame)
         {
-            return ma_decoder_seek_to_pcm_frame(miniaudioInstance(), targetFrame);
+            return ma_decoder_seek_to_pcm_frame(GetMiniaudioObject(), targetFrame);
         }
         
         ma_result GetAvailableFrames(size_t* availableFrames)
         {
-            return ma_decoder_get_available_frames(miniaudioInstance(), availableFrames);
+            return ma_decoder_get_available_frames(GetMiniaudioObject(), availableFrames);
         }
 
         ma_result GetCursor(size_t* cursor)
         {
-            return ma_decoder_get_cursor_in_pcm_frames(miniaudioInstance(), cursor);
+            return ma_decoder_get_cursor_in_pcm_frames(GetMiniaudioObject(), cursor);
         }
 
         ma_result GetLength(size_t* length)
         {
-            return ma_decoder_get_length_in_pcm_frames(miniaudioInstance(), length);
+            return ma_decoder_get_length_in_pcm_frames(GetMiniaudioObject(), length);
         }
 
-        ma_result GetAvailableFrames(size_t* availableFrames)
-        {
-            return ma_decoder_get_available_frames(miniaudioInstance(), availableFrames);
-        }
-
-        ma_decoder* miniaudioInstance()
+        ma_decoder* GetMiniaudioObject()
         {
             return &_Decoder;
         }
 
-        ma_result Decode(std::vector<float>& samples, size_t fromFrame = 0, size_t frameCount = 0)
+        ma_result Decode(Vector<float>& samples, size_t fromFrame = 0, size_t frameCount = 0)
         {
             if (fromFrame > 0)
-                CHECK_RETURN(Seek(fromFrame));
+                MACPP_CHECK_RESULT(Seek(fromFrame));
 
             samples.clear();
 
@@ -156,7 +170,7 @@ namespace Audio
         ma_decoder _Decoder;
     };
 
-    class NodeBase
+    class NodeBase : public MiniaudioObject<ma_node>
     {
     public:
         NodeBase(ma_node_graph* graph, size_t inputBusCount = 0, size_t outputBusCount = 0, ma_uint32 flags = 0)
@@ -180,15 +194,15 @@ namespace Audio
 
             ma_node_config config = ma_node_config_init();
             config.vtable = &_VTable;
-            return ma_node_init(graph, &config, nullptr, miniaudioInstance());
+            return ma_node_init(graph, &config, nullptr, GetMiniaudioObject());
         }
 
         virtual ~NodeBase()
         {
-            ma_node_uninit(miniaudioInstance(), nullptr);
+            ma_node_uninit(GetMiniaudioObject(), nullptr);
         }
 
-        ma_node* miniaudioInstance()
+        ma_node* GetMiniaudioObject()
         {
             return reinterpret_cast<ma_node*>(&_Proxy);
         }
@@ -225,9 +239,9 @@ namespace Audio
             void* thisNode;
         } _Proxy;
     };
-    using NodePtr = std::shared_ptr<NodeBase>;
+    using NodePtr = SharedPtr<NodeBase>;
 
-    class DataSourceBase
+    class DataSourceBase : public MiniaudioObject<ma_data_source>
     {
     public:
         DataSourceBase(ma_uint32 flags = 0)
@@ -250,15 +264,15 @@ namespace Audio
             ma_data_source_config config = ma_data_source_config_init();
             _VTable.flags = flags;
             config.vtable = &_VTable;
-            return ma_data_source_init(&config, miniaudioInstance());
+            return ma_data_source_init(&config, GetMiniaudioObject());
         }
 
         virtual ~DataSourceBase()
         {
-            ma_data_source_uninit(miniaudioInstance());
+            ma_data_source_uninit(GetMiniaudioObject());
         }
 
-        ma_data_source* miniaudioInstance()
+        ma_data_source* GetMiniaudioObject()
         {
             return reinterpret_cast<ma_data_source*>(&_Proxy);
         }
@@ -329,9 +343,9 @@ namespace Audio
             void* thisDataSource;
         } _Proxy;
     };
-    using DataSourcePtr = std::shared_ptr<DataSourceBase>;
+    using DataSourcePtr = SharedPtr<DataSourceBase>;
 
-    class DataSourceNode
+    class DataSourceNode : public MiniaudioObject<ma_data_source_node>
     {
     public:
         DataSourceNode()
@@ -341,15 +355,15 @@ namespace Audio
         ma_result Init(ma_data_source* dataSource, ma_node_graph* graph, ma_allocation_callbacks* allocationCallbacks = nullptr)
         {
             ma_data_source_node_config config = ma_data_source_node_config_init(dataSource);
-            return ma_data_source_node_init(graph, &config, allocationCallbacks, miniaudioInstance());
+            return ma_data_source_node_init(graph, &config, allocationCallbacks, GetMiniaudioObject());
         }
 
         ~DataSourceNode()
         {
-            ma_data_source_node_uninit(miniaudioInstance(), nullptr);
+            ma_data_source_node_uninit(GetMiniaudioObject(), nullptr);
         }
 
-        ma_data_source_node* miniaudioInstance()
+        ma_data_source_node* GetMiniaudioObject()
         {
             return &_DataSourceNode;
         }
@@ -357,9 +371,9 @@ namespace Audio
     private:
         ma_data_source_node _DataSourceNode;
     };
-    using DataSourceNodePtr = std::shared_ptr<DataSourceNode>;
+    using DataSourceNodePtr = SharedPtr<DataSourceNode>;
 
-    class Graph
+    class Graph : public MiniaudioObject<ma_node_graph>
     {
     public:
         Graph()
@@ -370,12 +384,12 @@ namespace Audio
         ma_result Init(ma_uint32 channelCount = 1)
         {
             ma_node_graph_config config = ma_node_graph_config_init(channelCount);
-            return ma_node_graph_init(&config, nullptr, miniaudioInstance());
+            return ma_node_graph_init(&config, nullptr, GetMiniaudioObject());
         }
 
         ma_result Read(void* renderBuffer, size_t frameCount, size_t* framesRead)
         {
-            return ma_node_graph_read_pcm_frames(miniaudioInstance(), renderBuffer, frameCount, framesRead);
+            return ma_node_graph_read_pcm_frames(GetMiniaudioObject(), renderBuffer, frameCount, framesRead);
         }
 
         ma_result DetachNodeFull(ma_node* node)
@@ -385,44 +399,19 @@ namespace Audio
 
         ma_result AttachToEndpoint(ma_node* node)
         {
-            return ma_node_attach_output_bus(node, 0,  ma_node_graph_get_endpoint(miniaudioInstance()), 0);
+            return ma_node_attach_output_bus(node, 0,  ma_node_graph_get_endpoint(GetMiniaudioObject()), 0);
         }
 
-        ma_node_graph* miniaudioInstance()
+        ma_node_graph* GetMiniaudioObject()
         {
             return &_Graph;
         }
-/*
-        ma_result AddDataSource(DataSourcePtr dataSource)
-        {
-            DataSourceNodePtr dataSourceNode = AddDataSourceNode(dataSource);
-            if (!dataSourceNode)
-                return MA_ERROR;
-
-            return AttachToEndpoint(dataSourceNode->miniaudioInstance());
-        }
-
-        ma_result RemoveDataSourceNode(DataSourceNodePtr dataSourceNode)
-        {
-            return ma_node_detach_full(dataSourceNode ? dataSourceNode->miniaudioInstance() : nullptr);
-        }
-
-    private:
-        DataSourceNodePtr AddDataSourceNode(DataSourcePtr dataSource)
-        {
-            DataSourceNodePtr dataSourceNode = std::make_shared<DataSourceNode>();
-            dataSourceNode->Init(dataSource, miniaudioInstance());
-            auto itrBool = _DataSourceNodes.insert(dataSourceNode);
-            return itrBool.second ? *itrBool.first : nullptr;
-        }
-        std::set<DataSourceNodePtr> _DataSourceNodes;
-*/
 
     private:
         ma_node_graph _Graph;
     };
 
-    class DeviceBase
+    class DeviceBase : public MiniaudioObject<ma_device>
     {
     public:
         ma_result Init(ma_device_type deviceType = ma_device_type_playback, ma_uint32 channelCount = 0, ma_uint32 sampleRate = 0, ma_format format = ma_format_f32, ma_context* context = nullptr)
@@ -453,22 +442,22 @@ namespace Audio
             config.dataCallback = DeviceBase::StaticDataCallback;
             config.pUserData = this;
 
-            return ma_device_init(context, &config, miniaudioInstance());
+            return ma_device_init(context, &config, GetMiniaudioObject());
         }
 
         virtual ~DeviceBase()
         {
-            ma_device_uninit(miniaudioInstance());
+            ma_device_uninit(GetMiniaudioObject());
         }
 
         ma_result Start()
         {
-            return ma_device_start(miniaudioInstance());
+            return ma_device_start(GetMiniaudioObject());
         }
 
         ma_result Stop()
         {
-            return ma_device_stop(miniaudioInstance());
+            return ma_device_stop(GetMiniaudioObject());
         }
 
         size_t FrameSize(ma_device_type deviceType = ma_device_type_playback) const
@@ -488,7 +477,7 @@ namespace Audio
             }
         }
 
-        ma_device* miniaudioInstance()
+        ma_device* GetMiniaudioObject()
         {
             return &_Device;
         }
@@ -507,31 +496,11 @@ namespace Audio
                 deviceBase->DataCallback(renderBuffer, captureBuffer, frameCount);
         }
 
-        // VDM : first implementation attempt
-        // void DeviceDataCallback(void* renderBuffer, size_t frameCount)
-        // {
-        //     size_t framesRead;
-        //     ma_result result = _Graph.Read(renderBuffer, frameCount, &framesRead);
-        //     if (result != MA_SUCCESS)
-        //     {
-        //         ma_zero_memory_default(renderBuffer, frameCount * FrameSize());
-        //         return;
-        //     }
-        //     if (framesRead < frameCount)
-        //     {
-        //         size_t bytesToZero = (frameCount - framesRead) * FrameSize();
-        //         size_t offset = framesRead * FrameSize();
-        //         renderBuffer = static_cast<void*>(static_cast<unsigned char*>(renderBuffer) + offset);
-        //         ma_zero_memory_default(renderBuffer, bytesToZero);
-        //     }
-        // }
-        // Graph _Graph;
-
     private:
         ma_device _Device;
     };
 
-    class Context
+    class Context : public MiniaudioObject<ma_context>
     {
     public:
         Context()
@@ -542,10 +511,10 @@ namespace Audio
         {
             ma_context_config config = ma_context_config_init();
             config.allocationCallbacks = allocationBallbacks;
-            return ma_context_init(backends, backendCount, &config, miniaudioInstance());
+            return ma_context_init(backends, backendCount, &config, GetMiniaudioObject());
         }
 
-        ma_context* miniaudioInstance()
+        ma_context* GetMiniaudioObject()
         {
             return &_Context;
         }
@@ -554,11 +523,208 @@ namespace Audio
         ma_context _Context;
     };
 
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// CODE BELOW IS NOT STRICTLY WRAPPING MINIAUDIO, JUST THINGS RELATED TO EXPERIMENTATION
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    class Engine : public MiniaudioObject<ma_engine>
+    {
+    public:
+        ma_result Init()
+        {
+            ma_engine_config config = ma_engine_config_init();
+
+            ma_result result = ma_engine_init(NULL, GetMiniaudioObject());
+            MACPP_CHECK_RESULT(result);
+        }
+
+        ma_uint64 GetTimeInPCMFrames()
+        {
+            return ma_engine_get_time_in_pcm_frames(GetMiniaudioObject());
+        }
+
+        ma_uint64 GetTimeInMilliseconds()
+        {
+            return ma_engine_get_time_in_milliseconds(GetMiniaudioObject());
+        }
+
+        ma_engine* GetMiniaudioObject()
+        {
+            return &_Engine;
+        }
+
+    private:
+        ma_engine _Engine;
+
+        // MA_API ma_result ma_engine_init(const ma_engine_config* pConfig, ma_engine* pEngine);
+        // MA_API void ma_engine_uninit(ma_engine* pEngine);
+        // MA_API ma_result ma_engine_read_pcm_frames(ma_engine* pEngine, void* pFramesOut, ma_uint64 frameCount, ma_uint64* pFramesRead);
+        // MA_API ma_node_graph* ma_engine_get_node_graph(ma_engine* pEngine);
+        // #if !defined(MA_NO_RESOURCE_MANAGER)
+        // MA_API ma_resource_manager* ma_engine_get_resource_manager(ma_engine* pEngine);
+        // #endif
+        // MA_API ma_device* ma_engine_get_device(ma_engine* pEngine);
+        // MA_API ma_log* ma_engine_get_log(ma_engine* pEngine);
+        // MA_API ma_node* ma_engine_get_endpoint(ma_engine* pEngine);
+        // MA_API ma_uint64 ma_engine_get_time_in_pcm_frames(const ma_engine* pEngine);
+        // MA_API ma_uint64 ma_engine_get_time_in_milliseconds(const ma_engine* pEngine);
+        // MA_API ma_result ma_engine_set_time_in_pcm_frames(ma_engine* pEngine, ma_uint64 globalTime);
+        // MA_API ma_result ma_engine_set_time_in_milliseconds(ma_engine* pEngine, ma_uint64 globalTime);
+        // MA_API ma_uint64 ma_engine_get_time(const ma_engine* pEngine);                  /* Deprecated. Use ma_engine_get_time_in_pcm_frames(). Will be removed in version 0.12. */
+        // MA_API ma_result ma_engine_set_time(ma_engine* pEngine, ma_uint64 globalTime);  /* Deprecated. Use ma_engine_set_time_in_pcm_frames(). Will be removed in version 0.12. */
+        // MA_API ma_uint32 ma_engine_get_channels(const ma_engine* pEngine);
+        // MA_API ma_uint32 ma_engine_get_sample_rate(const ma_engine* pEngine);
+        // MA_API ma_result ma_engine_start(ma_engine* pEngine);
+        // MA_API ma_result ma_engine_stop(ma_engine* pEngine);
+        // MA_API ma_result ma_engine_set_volume(ma_engine* pEngine, float volume);
+        // MA_API float ma_engine_get_volume(ma_engine* pEngine);
+        // MA_API ma_result ma_engine_set_gain_db(ma_engine* pEngine, float gainDB);
+        // MA_API float ma_engine_get_gain_db(ma_engine* pEngine);
+        // MA_API ma_uint32 ma_engine_get_listener_count(const ma_engine* pEngine);
+        // MA_API ma_uint32 ma_engine_find_closest_listener(const ma_engine* pEngine, float absolutePosX, float absolutePosY, float absolutePosZ);
+        // MA_API void ma_engine_listener_set_position(ma_engine* pEngine, ma_uint32 listenerIndex, float x, float y, float z);
+        // MA_API ma_vec3f ma_engine_listener_get_position(const ma_engine* pEngine, ma_uint32 listenerIndex);
+        // MA_API void ma_engine_listener_set_direction(ma_engine* pEngine, ma_uint32 listenerIndex, float x, float y, float z);
+        // MA_API ma_vec3f ma_engine_listener_get_direction(const ma_engine* pEngine, ma_uint32 listenerIndex);
+        // MA_API void ma_engine_listener_set_velocity(ma_engine* pEngine, ma_uint32 listenerIndex, float x, float y, float z);
+        // MA_API ma_vec3f ma_engine_listener_get_velocity(const ma_engine* pEngine, ma_uint32 listenerIndex);
+        // MA_API void ma_engine_listener_set_cone(ma_engine* pEngine, ma_uint32 listenerIndex, float innerAngleInRadians, float outerAngleInRadians, float outerGain);
+        // MA_API void ma_engine_listener_get_cone(const ma_engine* pEngine, ma_uint32 listenerIndex, float* pInnerAngleInRadians, float* pOuterAngleInRadians, float* pOuterGain);
+        // MA_API void ma_engine_listener_set_world_up(ma_engine* pEngine, ma_uint32 listenerIndex, float x, float y, float z);
+        // MA_API ma_vec3f ma_engine_listener_get_world_up(const ma_engine* pEngine, ma_uint32 listenerIndex);
+        // MA_API void ma_engine_listener_set_enabled(ma_engine* pEngine, ma_uint32 listenerIndex, ma_bool32 isEnabled);
+        // MA_API ma_bool32 ma_engine_listener_is_enabled(const ma_engine* pEngine, ma_uint32 listenerIndex);
+        // #ifndef MA_NO_RESOURCE_MANAGER
+        // MA_API ma_result ma_engine_play_sound_ex(ma_engine* pEngine, const char* pFilePath, ma_node* pNode, ma_uint32 nodeInputBusIndex);
+        // MA_API ma_result ma_engine_play_sound(ma_engine* pEngine, const char* pFilePath, ma_sound_group* pGroup);   /* Fire and forget. */
+        // #endif
+    };
+
+    class Sound : public MiniaudioObject<ma_sound>
+    {
+    public:
+        ~Sound()
+        {
+            ma_sound_uninit(GetMiniaudioObject());
+        }
+
+        ma_result InitFromFile(ma_engine* engine, const char* filePath, ma_uint32 flags = 0, ma_sound_group* group = nullptr, ma_fence* fence = nullptr)
+        {
+            return ma_sound_init_from_file(engine, filePath, flags, group, fence, GetMiniaudioObject());
+        }
+
+        ma_result Start()
+        {
+            return ma_sound_start(GetMiniaudioObject());
+        }
+
+        void SetStartTimeInPCMFrames(ma_uint64 pcmTime)
+        {
+            ma_sound_set_start_time_in_pcm_frames(GetMiniaudioObject(), pcmTime);
+        }
+
+        void SetStartTimeInMilliseconds(ma_uint64 millisecondsTime)
+        {
+            ma_sound_set_start_time_in_pcm_frames(GetMiniaudioObject(), millisecondsTime);
+        }
+
+        void SetStoptTimeInPCMFrames(ma_uint64 pcmTime)
+        {
+            ma_sound_set_stop_time_in_pcm_frames(GetMiniaudioObject(), pcmTime);
+        }
+
+        void SetStopTimeInMilliseconds(ma_uint64 millisecondsTime)
+        {
+            ma_sound_set_stop_time_in_pcm_frames(GetMiniaudioObject(), millisecondsTime);
+        }
+
+        ma_sound* GetMiniaudioObject()
+        {
+            return &_Sound;
+        }
+
+// #ifndef MA_NO_RESOURCE_MANAGER
+// MA_API ma_result ma_sound_init_from_file(ma_engine* pEngine, const char* pFilePath, ma_uint32 flags, ma_sound_group* pGroup, ma_fence* pDoneFence, ma_sound* pSound);
+// MA_API ma_result ma_sound_init_from_file_w(ma_engine* pEngine, const wchar_t* pFilePath, ma_uint32 flags, ma_sound_group* pGroup, ma_fence* pDoneFence, ma_sound* pSound);
+// MA_API ma_result ma_sound_init_copy(ma_engine* pEngine, const ma_sound* pExistingSound, ma_uint32 flags, ma_sound_group* pGroup, ma_sound* pSound);
+// #endif
+// MA_API ma_result ma_sound_init_from_data_source(ma_engine* pEngine, ma_data_source* pDataSource, ma_uint32 flags, ma_sound_group* pGroup, ma_sound* pSound);
+// MA_API ma_result ma_sound_init_ex(ma_engine* pEngine, const ma_sound_config* pConfig, ma_sound* pSound);
+// MA_API void ma_sound_uninit(ma_sound* pSound);
+// MA_API ma_engine* ma_sound_get_engine(const ma_sound* pSound);
+// MA_API ma_data_source* ma_sound_get_data_source(const ma_sound* pSound);
+// MA_API ma_result ma_sound_start(ma_sound* pSound);
+// MA_API ma_result ma_sound_stop(ma_sound* pSound);
+// MA_API ma_result ma_sound_stop_with_fade_in_pcm_frames(ma_sound* pSound, ma_uint64 fadeLengthInFrames);     /* Will overwrite any scheduled stop and fade. */
+// MA_API ma_result ma_sound_stop_with_fade_in_milliseconds(ma_sound* pSound, ma_uint64 fadeLengthInFrames);   /* Will overwrite any scheduled stop and fade. */
+// MA_API void ma_sound_set_volume(ma_sound* pSound, float volume);
+// MA_API float ma_sound_get_volume(const ma_sound* pSound);
+// MA_API void ma_sound_set_pan(ma_sound* pSound, float pan);
+// MA_API float ma_sound_get_pan(const ma_sound* pSound);
+// MA_API void ma_sound_set_pan_mode(ma_sound* pSound, ma_pan_mode panMode);
+// MA_API ma_pan_mode ma_sound_get_pan_mode(const ma_sound* pSound);
+// MA_API void ma_sound_set_pitch(ma_sound* pSound, float pitch);
+// MA_API float ma_sound_get_pitch(const ma_sound* pSound);
+// MA_API void ma_sound_set_spatialization_enabled(ma_sound* pSound, ma_bool32 enabled);
+// MA_API ma_bool32 ma_sound_is_spatialization_enabled(const ma_sound* pSound);
+// MA_API void ma_sound_set_pinned_listener_index(ma_sound* pSound, ma_uint32 listenerIndex);
+// MA_API ma_uint32 ma_sound_get_pinned_listener_index(const ma_sound* pSound);
+// MA_API ma_uint32 ma_sound_get_listener_index(const ma_sound* pSound);
+// MA_API ma_vec3f ma_sound_get_direction_to_listener(const ma_sound* pSound);
+// MA_API void ma_sound_set_position(ma_sound* pSound, float x, float y, float z);
+// MA_API ma_vec3f ma_sound_get_position(const ma_sound* pSound);
+// MA_API void ma_sound_set_direction(ma_sound* pSound, float x, float y, float z);
+// MA_API ma_vec3f ma_sound_get_direction(const ma_sound* pSound);
+// MA_API void ma_sound_set_velocity(ma_sound* pSound, float x, float y, float z);
+// MA_API ma_vec3f ma_sound_get_velocity(const ma_sound* pSound);
+// MA_API void ma_sound_set_attenuation_model(ma_sound* pSound, ma_attenuation_model attenuationModel);
+// MA_API ma_attenuation_model ma_sound_get_attenuation_model(const ma_sound* pSound);
+// MA_API void ma_sound_set_positioning(ma_sound* pSound, ma_positioning positioning);
+// MA_API ma_positioning ma_sound_get_positioning(const ma_sound* pSound);
+// MA_API void ma_sound_set_rolloff(ma_sound* pSound, float rolloff);
+// MA_API float ma_sound_get_rolloff(const ma_sound* pSound);
+// MA_API void ma_sound_set_min_gain(ma_sound* pSound, float minGain);
+// MA_API float ma_sound_get_min_gain(const ma_sound* pSound);
+// MA_API void ma_sound_set_max_gain(ma_sound* pSound, float maxGain);
+// MA_API float ma_sound_get_max_gain(const ma_sound* pSound);
+// MA_API void ma_sound_set_min_distance(ma_sound* pSound, float minDistance);
+// MA_API float ma_sound_get_min_distance(const ma_sound* pSound);
+// MA_API void ma_sound_set_max_distance(ma_sound* pSound, float maxDistance);
+// MA_API float ma_sound_get_max_distance(const ma_sound* pSound);
+// MA_API void ma_sound_set_cone(ma_sound* pSound, float innerAngleInRadians, float outerAngleInRadians, float outerGain);
+// MA_API void ma_sound_get_cone(const ma_sound* pSound, float* pInnerAngleInRadians, float* pOuterAngleInRadians, float* pOuterGain);
+// MA_API void ma_sound_set_doppler_factor(ma_sound* pSound, float dopplerFactor);
+// MA_API float ma_sound_get_doppler_factor(const ma_sound* pSound);
+// MA_API void ma_sound_set_directional_attenuation_factor(ma_sound* pSound, float directionalAttenuationFactor);
+// MA_API float ma_sound_get_directional_attenuation_factor(const ma_sound* pSound);
+// MA_API void ma_sound_set_fade_in_pcm_frames(ma_sound* pSound, float volumeBeg, float volumeEnd, ma_uint64 fadeLengthInFrames);
+// MA_API void ma_sound_set_fade_in_milliseconds(ma_sound* pSound, float volumeBeg, float volumeEnd, ma_uint64 fadeLengthInMilliseconds);
+// MA_API void ma_sound_set_fade_start_in_pcm_frames(ma_sound* pSound, float volumeBeg, float volumeEnd, ma_uint64 fadeLengthInFrames, ma_uint64 absoluteGlobalTimeInFrames);
+// MA_API void ma_sound_set_fade_start_in_milliseconds(ma_sound* pSound, float volumeBeg, float volumeEnd, ma_uint64 fadeLengthInMilliseconds, ma_uint64 absoluteGlobalTimeInMilliseconds);
+// MA_API float ma_sound_get_current_fade_volume(const ma_sound* pSound);
+// MA_API void ma_sound_set_start_time_in_pcm_frames(ma_sound* pSound, ma_uint64 absoluteGlobalTimeInFrames);
+// MA_API void ma_sound_set_start_time_in_milliseconds(ma_sound* pSound, ma_uint64 absoluteGlobalTimeInMilliseconds);
+// MA_API void ma_sound_set_stop_time_in_pcm_frames(ma_sound* pSound, ma_uint64 absoluteGlobalTimeInFrames);
+// MA_API void ma_sound_set_stop_time_in_milliseconds(ma_sound* pSound, ma_uint64 absoluteGlobalTimeInMilliseconds);
+// MA_API void ma_sound_set_stop_time_with_fade_in_pcm_frames(ma_sound* pSound, ma_uint64 stopAbsoluteGlobalTimeInFrames, ma_uint64 fadeLengthInFrames);
+// MA_API void ma_sound_set_stop_time_with_fade_in_milliseconds(ma_sound* pSound, ma_uint64 stopAbsoluteGlobalTimeInMilliseconds, ma_uint64 fadeLengthInMilliseconds);
+// MA_API ma_bool32 ma_sound_is_playing(const ma_sound* pSound);
+// MA_API ma_uint64 ma_sound_get_time_in_pcm_frames(const ma_sound* pSound);
+// MA_API ma_uint64 ma_sound_get_time_in_milliseconds(const ma_sound* pSound);
+// MA_API void ma_sound_set_looping(ma_sound* pSound, ma_bool32 isLooping);
+// MA_API ma_bool32 ma_sound_is_looping(const ma_sound* pSound);
+// MA_API ma_bool32 ma_sound_at_end(const ma_sound* pSound);
+// MA_API ma_result ma_sound_seek_to_pcm_frame(ma_sound* pSound, ma_uint64 frameIndex); /* Just a wrapper around ma_data_source_seek_to_pcm_frame(). */
+// MA_API ma_result ma_sound_get_data_format(ma_sound* pSound, ma_format* pFormat, ma_uint32* pChannels, ma_uint32* pSampleRate, ma_channel* pChannelMap, size_t channelMapCap);
+// MA_API ma_result ma_sound_get_cursor_in_pcm_frames(ma_sound* pSound, ma_uint64* pCursor);
+// MA_API ma_result ma_sound_get_length_in_pcm_frames(ma_sound* pSound, ma_uint64* pLength);
+// MA_API ma_result ma_sound_get_cursor_in_seconds(ma_sound* pSound, float* pCursor);
+// MA_API ma_result ma_sound_get_length_in_seconds(ma_sound* pSound, float* pLength);
+// MA_API ma_result ma_sound_set_end_callback(ma_sound* pSound, ma_sound_end_proc callback, void* pUserData);
+
+    private:
+        ma_sound _Sound;
+    };
+    using SoundPtr = SharedPtr<Sound>;
+
+#if 0 // Not part of miniaudio wrapper
 
     class PCMData
     {
@@ -569,12 +735,12 @@ namespace Audio
         {
         }
 
-        std::vector<float>& GetSamplesForWriting()
+        Vector<float>& GetSamplesForWriting()
         {
             return _Samples;
         }
 
-        const std::vector<float>& GetSamples() const
+        const Vector<float>& GetSamples() const
         {
             return _Samples;
         }
@@ -597,7 +763,7 @@ namespace Audio
         }
 
     private:
-        std::vector<float> _Samples;
+        Vector<float> _Samples;
         Format _Format;
     };
     using PCMDataPtr = std::shared_ptr<PCMData>;
@@ -623,7 +789,7 @@ namespace Audio
         ma_result Init(Format format = Format())
         {
             ma_result result = _Decoder.Init(_FilePath.c_str(), format);
-            CHECK_RETURN(result);
+            MACPP_CHECK_RESULT(result);
             _PCMData.SetFormat(_Decoder.GetFormat());
         }
 
@@ -671,7 +837,7 @@ namespace Audio
                 return MA_NO_DATA_AVAILABLE;
             }
 
-            const std::vector<float>& samples = _CurrentData->GetSamples();
+            const Vector<float>& samples = _CurrentData->GetSamples();
             const size_t channelCount = _CurrentData->GetFormat().channelCount;
             const size_t totalFrames = _CurrentData->GetframeCount();
             float* outBuffer = static_cast<float*>(buffer);
@@ -741,27 +907,6 @@ namespace Audio
         PCMDataPtr _NextData;
         std::mutex _NextDataMutex;
     };
+#endif
 
-    class System
-    {
-    public:
-        ma_result Init()
-        {
-            if (_Devices.empty())
-            {
-                DeviceBase& device = *_Devices.emplace_back(std::make_unique<DeviceBase>());
-                return device.Init();
-            }
-            return MA_SUCCESS;
-        }
-
-        ma_result LoadSound(const char* filePath)
-        {
-            return MA_NOT_IMPLEMENTED;
-        }
-
-    private:
-        std::vector<std::unique_ptr<DeviceBase>> _Devices;
-        std::vector<AssetPtr> _Assets;
-    };
 }
