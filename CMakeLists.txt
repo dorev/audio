@@ -6,13 +6,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 project(tests)
 
 add_executable(${PROJECT_NAME}
-    main.cpp
     tests.cpp
+    miniaudio.h
+    miniaudio.hpp
 )
 
 target_include_directories(${PROJECT_NAME}
     PUBLIC gtest
     PUBLIC gtest/include
-    PUBLIC gmock
-    PUBLIC gmock/include
 )

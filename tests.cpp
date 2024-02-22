@@ -1,17 +1,33 @@
-#include "gtest/gtest.h"
+#include "gtest/src/gtest-all.cc"
+
 #include "miniaudio.hpp"
 
-class Tests : public ::testing::Test
-{
-};
-
-
-namespace Audio
+namespace MiniaudioCpp
 {
 
-TEST_F(Tests, Yay)
+TEST(Decoder, DryLifeCycle)
 {
-    // The real next thing to do is to wrap ma_engine
+    Decoder decoder;
 }
 
+TEST(Decoder, FailInitWithEmptyPath)
+{
+    Decoder decoder;
+    ma_result result = decoder.Init("");
+    EXPECT_EQ(result, MA_INVALID_ARGS);
+}
+
+} // namespace MiniaudioCpp
+
+
+/**********************************************************************************************************************
+
+GoogleTest main
+
+**********************************************************************************************************************/
+
+int main(int argc, char **argv) 
+{
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
 }
