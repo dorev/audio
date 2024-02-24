@@ -581,8 +581,14 @@ namespace MiniaudioCpp
     class Context : public MiniaudioObject<ma_context>
     {
     public:
-        Context()
+        ma_context* GetMiniaudioObject()
         {
+            return &_Context;
+        }
+
+        operator ma_context*()
+        {
+            return GetMiniaudioObject();
         }
 
         ma_result Init(
@@ -596,10 +602,11 @@ namespace MiniaudioCpp
             return ma_context_init(backends, backendCount, &config, GetMiniaudioObject());
         }
 
-        ma_context* GetMiniaudioObject()
-        {
-            return &_Context;
-        }
+        /* MA_API ma_result ma_context_init(const ma_backend backends[], ma_uint32 backendCount, const ma_context_config* pConfig, ma_context* pContext); */
+        /* MA_API ma_result ma_context_uninit(ma_context* pContext); */
+        /* MA_API ma_result ma_context_enumerate_devices(ma_context* pContext, ma_enum_devices_callback_proc callback, void* pUserData); */
+        /* MA_API ma_result ma_context_get_devices(ma_context* pContext, ma_device_info** ppPlaybackDeviceInfos, ma_uint32* pPlaybackDeviceCount, ma_device_info** ppCaptureDeviceInfos, ma_uint32* pCaptureDeviceCount); */
+        /* MA_API ma_result ma_context_get_device_info(ma_context* pContext, ma_device_type deviceType, const ma_device_id* pDeviceID, ma_device_info* pDeviceInfo); */
 
     private:
         ma_context _Context;
