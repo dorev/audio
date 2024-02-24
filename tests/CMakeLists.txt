@@ -7,11 +7,12 @@ project(tests)
 
 add_executable(${PROJECT_NAME}
     tests.cpp
-    miniaudio.h
-    miniaudio.hpp
+    ../miniaudio.h
+    ../miniaudio.hpp
 )
 
 target_include_directories(${PROJECT_NAME}
+    PUBLIC ..
     PUBLIC gtest
     PUBLIC gtest/include
 )
