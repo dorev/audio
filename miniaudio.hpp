@@ -107,6 +107,11 @@ namespace MiniaudioCpp
 
         virtual T* GetMiniaudioObject() = 0;
 
+        operator T*()
+        {
+            return GetMiniaudioObject();
+        }
+
     };
 
     class Decoder : public MiniaudioObject<ma_decoder>
@@ -117,9 +122,15 @@ namespace MiniaudioCpp
             return &_Decoder;
         }
 
+        const ma_decoder_config* GetConfig()
+        {
+            return &_Config;
+        }
+
         Decoder()
         {
             memset(GetMiniaudioObject(), 0, sizeof(MiniaudioObject::Type));
+            memset(&_Config, 0, sizeof(ma_decoder_config));
         }
 
         virtual ~Decoder()
@@ -127,46 +138,92 @@ namespace MiniaudioCpp
             ma_decoder_uninit(GetMiniaudioObject());
         }
         
-        ma_result Init(
+        ma_result InitFile(
             const char* filePath,
             ma_decoder_config config = ma_decoder_config_init_default()
         )
         {
-            return ma_decoder_init_file(filePath, &config, GetMiniaudioObject());
+            _Config = config;
+            return ma_decoder_init_file(filePath, GetConfig(), GetMiniaudioObject());
         }
 
-        ma_result Init(
+        static ma_result DecodeFromVFS(
+            ma_vfs* vfs,
+            const char* filePath,
+            ma_uint64* frameCountOut,
+            void** pcmFramesOut,
+            ma_decoder_config config = ma_decoder_config_init_default()
+        )
+        {
+            return ma_decode_from_vfs(vfs, filePath, &config, frameCountOut, pcmFramesOut);
+        }
+
+        static ma_result DecodeFile(
+            const char* filePath,
+            ma_uint64* frameCountOut,
+            void** pcmFramesOut,
+            ma_decoder_config config = ma_decoder_config_init_default()
+        )
+        {
+            return ma_decode_file(filePath, &config, frameCountOut, pcmFramesOut);
+        }
+
+        static ma_result DecodeMemory(
+            const void* data,
+            size_t dataSize,
+            ma_uint64* frameCountOut,
+            void** pcmFramesOut,
+            ma_decoder_config config = ma_decoder_config_init_default()
+        )
+        {
+            return ma_decode_memory(data, dataSize, &config, frameCountOut, pcmFramesOut);
+        }
+
+        ma_result InitFile(
             const wchar_t* filePath,
             ma_decoder_config config = ma_decoder_config_init_default()
         )
         {
-            return ma_decoder_init_file_w(filePath, &config, GetMiniaudioObject());
+            _Config = config;
+            return ma_decoder_init_file_w(filePath, GetConfig(), GetMiniaudioObject());
         }
 
-        ma_result Init(
+        ma_result InitMemory(
             const void* data,
             size_t dataSize,
             ma_decoder_config config = ma_decoder_config_init_default()
         )
         {
-            return ma_decoder_init_memory(data, dataSize, &config, GetMiniaudioObject());
+            _Config = config;
+            return ma_decoder_init_memory(data, dataSize, GetConfig(), GetMiniaudioObject());
         }
 
-        // TODO:
-        /* MA_API ma_result ma_decoder_init(ma_decoder_read_proc onRead, ma_decoder_seek_proc onSeek, void* pUserData, const ma_decoder_config* pConfig, ma_decoder* pDecoder); */
-        /* MA_API ma_result ma_decoder_init_vfs(ma_vfs* pVFS, const char* pFilePath, const ma_decoder_config* pConfig, ma_decoder* pDecoder); */
-        /* MA_API ma_result ma_decoder_init_vfs_w(ma_vfs * pVFS, const wchar_t* pFilePath, const ma_decoder_config * pConfig, ma_decoder * pDecoder); */
-        /* MA_API ma_result ma_decoder_get_data_format(ma_decoder* pDecoder, ma_format* pFormat, ma_uint32* pChannels, ma_uint32* pSampleRate, ma_channel* pChannelMap, size_t channelMapCap); */
-        /* MA_API ma_result ma_decode_from_vfs(ma_vfs* pVFS, const char* pFilePath, ma_decoder_config* pConfig, ma_uint64* pFrameCountOut, void** ppPCMFramesOut); */
-        /* MA_API ma_result ma_decode_file(const char* pFilePath, ma_decoder_config* pConfig, ma_uint64* pFrameCountOut, void** ppPCMFramesOut); */
-        /* MA_API ma_result ma_decode_memory(const void* pData, size_t dataSize, ma_decoder_config* pConfig, ma_uint64* pFrameCountOut, void** ppPCMFramesOut); */
+        ma_result InitVFS(
+            ma_vfs* vfs,
+            const char* filePath,
+            ma_decoder_config config = ma_decoder_config_init_default()
+        )
+        {
+            _Config = config;
+            return ma_decoder_init_vfs(vfs, filePath, GetConfig(), GetMiniaudioObject());
+        }
 
-        ma_result Read(void* buffer, ma_uint64 frameCount, ma_uint64* framesRead)
+        ma_result InitVFS(
+            ma_vfs* vfs,
+            const wchar_t* filePath,
+            ma_decoder_config config = ma_decoder_config_init_default()
+        )
+        {
+            _Config = config;
+            return ma_decoder_init_vfs_w(vfs, filePath, GetConfig(), GetMiniaudioObject());
+        }
+
+        ma_result ReadPCMFrames(void* buffer, ma_uint64 frameCount, ma_uint64* framesRead)
         {
             return ma_decoder_read_pcm_frames(GetMiniaudioObject(), buffer, frameCount, framesRead);
         };
 
-        ma_result Seek(ma_uint64 targetFrame)
+        ma_result SeekToPCMFrame(ma_uint64 targetFrame)
         {
             return ma_decoder_seek_to_pcm_frame(GetMiniaudioObject(), targetFrame);
         }
@@ -176,17 +233,23 @@ namespace MiniaudioCpp
             return ma_decoder_get_available_frames(GetMiniaudioObject(), availableFrames);
         }
 
-        ma_result GetCursor(ma_uint64* cursor)
+        ma_result GetCursorInPCMFrames(ma_uint64* cursor)
         {
             return ma_decoder_get_cursor_in_pcm_frames(GetMiniaudioObject(), cursor);
         }
 
-        ma_result GetLength(ma_uint64* length)
+        ma_result GetLengthInPCMFrames(ma_uint64* length)
         {
             return ma_decoder_get_length_in_pcm_frames(GetMiniaudioObject(), length);
         }
 
+        ma_result GetDataFormat(ma_format* format, ma_uint32* channels, ma_uint32* sampleRate, ma_channel* channelMap, size_t channelMapCap)
+        {
+            return ma_decoder_get_data_format(GetMiniaudioObject(), format, channels, sampleRate, channelMap, channelMapCap);
+        }
+
 #if MACPP_EXTENDED_METHODS_ENABLED
+
         ma_result Decode(Vector<float>& samples, size_t fromFrame = 0, size_t frameCount = 0)
         {
             if (fromFrame > 0)
@@ -220,10 +283,57 @@ namespace MiniaudioCpp
                 }
             }
         }
+
 #endif // MACPP_EXTENDED_METHODS_ENABLED
 
-    private:
+    protected:
         ma_decoder _Decoder;
+        ma_decoder_config _Config;
+    };
+
+    class DecoderBase : public Decoder
+    {
+    public:
+        ma_result Init(ma_decoder_config config = ma_decoder_config_init_default())
+        {
+            _Config = config;
+            ma_decoder_seek_proc o = 0;
+            return ma_decoder_init(StaticReadCallback, StaticSeekCallback, this, GetConfig(), GetMiniaudioObject());
+        }
+
+        virtual ma_result ReadCallback(void* bufferOut, size_t bytesToRead, size_t* bytesRead) = 0;
+        virtual ma_result SeekCallback(ma_uint64 byteOffset, ma_seek_origin origin) = 0;
+
+    private:
+        static ma_result StaticReadCallback(ma_decoder* decoder, void* bufferOut, size_t bytesToRead, size_t* bytesRead)
+        {
+            if (!decoder) {
+                return MA_ERROR;
+            }
+
+            DecoderBase* instance = reinterpret_cast<DecoderBase*>(decoder->pUserData);
+
+            if (!instance) {
+                return MA_ERROR;
+            }
+
+            return instance->ReadCallback(bufferOut, bytesToRead, bytesRead);
+        }
+
+        static ma_result StaticSeekCallback(ma_decoder* decoder, ma_int64 byteOffset, ma_seek_origin origin)
+        {
+            if (!decoder) {
+                return MA_ERROR;
+            }
+
+            DecoderBase* instance = reinterpret_cast<DecoderBase*>(decoder->pUserData);
+
+            if (!instance) {
+                return MA_ERROR;
+            }
+
+            return instance->SeekCallback(byteOffset, origin);
+        }
     };
 
     // TODO: check if API wrapper is complete
