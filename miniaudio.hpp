@@ -63,9 +63,13 @@ MiniaudioCpp config
 #define MACPP_VERSION_STRING   MA_XSTRINGIFY(MACPP_VERSION_MAJOR) "." MA_XSTRINGIFY(MACPP_VERSION_MINOR) "." MA_XSTRINGIFY(MACPP_VERSION_REVISION)
 
 /* Extended methods refer to addition that were made on top of the `miniaudio` API. */
-#define MACPP_ENABLE_EXTENDED_METHODS false
+#if !defined(MACPP_ENABLE_EXTENDED_METHODS)
+    #define MACPP_EXTENDED_METHODS_ENABLED false
+#else
+    #define MACPP_EXTENDED_METHODS_ENABLED true
+#endif
 
-#if MACPP_ENABLE_EXTENDED_METHODS
+#if MACPP_EXTENDED_METHODS_ENABLED
 
 /*
 
@@ -87,7 +91,7 @@ namespace MiniaudioCpp
     using Vector = std::vector<T>;
 }
 
-#endif // MACPP_ENABLE_EXTENDED_METHODS
+#endif // MACPP_EXTENDED_METHODS_ENABLED
 
 namespace MiniaudioCpp
 {
@@ -182,7 +186,7 @@ namespace MiniaudioCpp
             return ma_decoder_get_length_in_pcm_frames(GetMiniaudioObject(), length);
         }
 
-#if MACPP_ENABLE_EXTENDED_METHODS
+#if MACPP_EXTENDED_METHODS_ENABLED
         ma_result Decode(Vector<float>& samples, size_t fromFrame = 0, size_t frameCount = 0)
         {
             if (fromFrame > 0)
@@ -216,7 +220,7 @@ namespace MiniaudioCpp
                 }
             }
         }
-#endif // MACPP_ENABLE_EXTENDED_METHODS
+#endif // MACPP_EXTENDED_METHODS_ENABLED
 
     private:
         ma_decoder _Decoder;
@@ -237,8 +241,7 @@ namespace MiniaudioCpp
             size_t outputBusCount = 0,
             ma_uint32 flags = 0
         )
-            : _VTable
-            {
+            : _VTable {
                 NodeBase::ProcessCallback,
                 NodeBase::GetRequiredInputFrameCountCallback,
                 0, // inputBusCount
@@ -302,6 +305,7 @@ namespace MiniaudioCpp
     private:
         ma_node_vtable _VTable;
         ma_node_graph* _Graph;
+
         struct Proxy
         {
             ma_node_base base;
@@ -314,8 +318,7 @@ namespace MiniaudioCpp
     {
     public:
         DataSourceBase(ma_uint32 flags = 0)
-            : _VTable
-            {
+            : _VTable {
                 DataSourceBase::StaticRead,
                 DataSourceBase::StaticSeek,
                 DataSourceBase::StaticGetDataFormat,
@@ -431,12 +434,12 @@ namespace MiniaudioCpp
     class DataSourceNode : public MiniaudioObject<ma_data_source_node>
     {
     public:
-        DataSourceNode()
-        {
-        }
-
         // TODO: complete configuration parameters access
-        ma_result Init(ma_data_source* dataSource, ma_node_graph* graph, ma_allocation_callbacks* allocationCallbacks = nullptr)
+        ma_result Init(
+            ma_data_source* dataSource,
+            ma_node_graph* graph,
+            ma_allocation_callbacks* allocationCallbacks = nullptr
+        )
         {
             ma_data_source_node_config config = ma_data_source_node_config_init(dataSource);
             return ma_data_source_node_init(graph, &config, allocationCallbacks, GetMiniaudioObject());
@@ -461,7 +464,6 @@ namespace MiniaudioCpp
     {
     public:
         Graph()
-            : _Graph()
         {
         }
 
@@ -537,25 +539,6 @@ namespace MiniaudioCpp
 
         virtual void DataCallback(void* renderBuffer, const void* captureBuffer, ma_uint32 frameCount) = 0;
 
-#if MACPP_ENABLE_EXTENDED_METHODS
-        size_t FrameSize(ma_device_type deviceType = ma_device_type_playback) const
-        {
-            switch (deviceType)
-            {
-            case ma_device_type_playback:
-                return ma_get_bytes_per_frame(_Device.playback.format, _Device.playback.channels);
-
-            case ma_device_type_capture:
-            case ma_device_type_loopback:
-                return ma_get_bytes_per_frame(_Device.capture.format, _Device.capture.channels);
-
-            case ma_device_type_duplex:
-            default:
-                return 0;
-            }
-        }
-#endif // MACPP_ENABLE_EXTENDED_METHODS
-
     private:
         static DeviceBase* CastToThis(ma_device* device)
         {
@@ -568,6 +551,28 @@ namespace MiniaudioCpp
                 deviceBase->DataCallback(renderBuffer, captureBuffer, frameCount);
             }
         }
+
+#if MACPP_EXTENDED_METHODS_ENABLED
+
+    public:
+        size_t FrameSize() const
+        {
+            switch (deviceType)
+            {
+            case ma_device_type_duplex: // TODO: check if this assumption is right
+            case ma_device_type_playback:
+                return ma_get_bytes_per_frame(_Device.playback.format, _Device.playback.channels);
+
+            case ma_device_type_capture:
+            case ma_device_type_loopback:
+                return ma_get_bytes_per_frame(_Device.capture.format, _Device.capture.channels);
+
+            default:
+                return 0;
+            }
+        }
+
+#endif // MACPP_EXTENDED_METHODS_ENABLED
 
     private:
         ma_device _Device;
@@ -607,6 +612,11 @@ namespace MiniaudioCpp
         ma_engine* GetMiniaudioObject()
         {
             return &_Engine;
+        }
+
+        operator ma_engine*()
+        {
+            return GetMiniaudioObject();
         }
 
         void Uninit()
@@ -790,6 +800,13 @@ namespace MiniaudioCpp
         {
             return ma_engine_play_sound(GetMiniaudioObject(), filePath, group);
         }
+
+#endif
+
+#if MACPP_EXTENDED_METHODS_ENABLED
+
+public:
+private:
 
 #endif
 

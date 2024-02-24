@@ -1,40 +1,74 @@
 #include "gtest/src/gtest-all.cc"
 
+#define MACPP_ENABLED_EXTENDED_METHODS
 #include "miniaudio.hpp"
+
+#pragma region Tests helpers
+
+#include <chrono>
+#include <thread>
+
+void WaitMs(int milliseconds)
+{
+    std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds));
+}
+
+static const char* DefaultTestFilePath = "beat.mp3";
+
+#pragma endregion
 
 namespace MiniaudioCpp
 {
 
-TEST(Engine, PlayASound)
+/**********************************************************************************************************************
+
+Sound tests
+
+**********************************************************************************************************************/
+
+TEST(Sound, PlayASound)
 {
     Engine engine;
     engine.Init();
 
-    Sound sound = CreateSound("beat.mp3");
+    Sound sound;
+    sound.InitFromFile(engine, DefaultTestFilePath);
 
-    ma_result result = sound.PlayNow();
-    if (result == MA_SUCCESS)
-    {
-        while (sound.IsPlaying())
-            WaitMs(100);
+    ma_result result = sound.Start();
+    EXPECT_EQ(result, MA_SUCCESS);
+    EXPECT_TRUE(sound.IsPlaying());
 
-        if (!sound.AtEnd())
-            FAIL() << "Sound should be finished if Sound::IsPlaying() returns false".
-
-        sound.Stop();
-    }
-    else
-    {
-        FAIL() << "Unable to play a sound.";
+    while (sound.IsPlaying()) {
+        WaitMs(100);
     }
 
-    // ...
+    EXPECT_TRUE(sound.AtEnd());
 }
 
-TEST(Decoder, DryLifeCycle)
+TEST(Sound, StopASound)
 {
-    Decoder decoder;
+    Engine engine;
+    engine.Init();
+
+    Sound sound;
+    sound.InitFromFile(engine, DefaultTestFilePath);
+
+    ma_result result = sound.Start();
+    EXPECT_EQ(result, MA_SUCCESS);
+    EXPECT_TRUE(sound.IsPlaying());
+
+    WaitMs(500);
+    result = sound.Stop();
+
+    EXPECT_EQ(result, MA_SUCCESS);
+    EXPECT_FALSE(sound.AtEnd());
 }
+
+/**********************************************************************************************************************
+
+Decoder tests
+
+**********************************************************************************************************************/
 
 TEST(Decoder, FailInitWithEmptyPath)
 {
@@ -45,14 +79,13 @@ TEST(Decoder, FailInitWithEmptyPath)
 
 } // namespace MiniaudioCpp
 
-
 /**********************************************************************************************************************
 
 GoogleTest main
 
 **********************************************************************************************************************/
 
-int main(int argc, char **argv) 
+int main(int argc, char **argv)
 {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
