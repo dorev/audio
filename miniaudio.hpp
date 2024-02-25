@@ -268,7 +268,7 @@ Decoder
         ma_result Decode(Vector<float>& samples, size_t fromFrame = 0, size_t frameCount = 0)
         {
             if (fromFrame > 0)
-                MACPP_CHECK_RESULT(Seek(fromFrame));
+                MACPP_CHECK_RESULT(SeekToPCMFrame(fromFrame));
 
             samples.clear();
 
@@ -283,7 +283,7 @@ Decoder
                     ? std::min(framesPerBuffer, frameCount - totalFramesRead)
                     : std::numeric_limits<size_t>::max();
 
-                ma_result result = Read(buffer, framesToRead, &framesRead);
+                ma_result result = ReadPCMFrames(buffer, framesToRead, &framesRead);
                 if (result == MA_SUCCESS || result == MA_AT_END) 
                 {
                     totalFramesRead += framesRead;
@@ -680,22 +680,6 @@ Decoder
 #if MACPP_EXTENDED_METHODS_ENABLED
 
     public:
-        size_t FrameSize() const
-        {
-            switch (deviceType)
-            {
-            case ma_device_type_duplex: // TODO: check if this assumption is right
-            case ma_device_type_playback:
-                return ma_get_bytes_per_frame(_Device.playback.format, _Device.playback.channels);
-
-            case ma_device_type_capture:
-            case ma_device_type_loopback:
-                return ma_get_bytes_per_frame(_Device.capture.format, _Device.capture.channels);
-
-            default:
-                return 0;
-            }
-        }
 
 #endif // MACPP_EXTENDED_METHODS_ENABLED
 
@@ -751,7 +735,7 @@ Decoder
             return GetMiniaudioObject();
         }
 
-        void Uninit()
+        ~Engine()
         {
             ma_engine_uninit(GetMiniaudioObject());
         }
@@ -941,48 +925,48 @@ public:
 #ifndef MA_NO_RESOURCE_MANAGER
 
         ma_result InitSoundFromFile(
-            SharedPtr<Sound>& sound,
+            ma_sound* sound,
             const char* filePath,
             ma_uint32 flags = 0,
             ma_sound_group* group = nullptr,
             ma_fence* fence = nullptr
         )
         {
-            return ma_sound_init_from_file(GetMiniaudioObject(), filePath, flags, group, fence, *sound);
+            return ma_sound_init_from_file(GetMiniaudioObject(), filePath, flags, group, fence, sound);
         }
 
         ma_result InitSoundFromFile(
-            SharedPtr<Sound>& sound,
+            ma_sound* sound,
             const wchar_t* filePath,
             ma_uint32 flags = 0,
             ma_sound_group* group = nullptr,
             ma_fence* fence = nullptr
         )
         {
-            return ma_sound_init_from_file_w(GetMiniaudioObject(), filePath, flags, group, fence, *sound);
+            return ma_sound_init_from_file_w(GetMiniaudioObject(), filePath, flags, group, fence, sound);
         }
 
         ma_result InitSoundCopy(
-            SharedPtr<Sound>& sound,
-            const SharedPtr<Sound>& otherSound,
+            ma_sound* sound,
+            const ma_sound* otherSound,
             ma_uint32 flags = 0,
             ma_sound_group* group = nullptr,
             ma_fence* fence = nullptr
         )
         {
-            return ma_sound_init_copy(GetMiniaudioObject(), *otherSound, flags, group, *sound);
+            return ma_sound_init_copy(GetMiniaudioObject(), otherSound, flags, group, sound);
         }
 
 #endif // MA_NO_RESOURCE_MANAGER
 
-        ma_result InitFromDataSource(
-            SharedPtr<Sound>& sound,
+        ma_result InitSoundFromDataSource(
+            ma_sound* sound,
             ma_data_source* dataSource,
             ma_uint32 flags = 0,
             ma_sound_group* group = nullptr
         )
         {
-            return ma_sound_init_from_data_source(GetMiniaudioObject()), dataSource, flags, group, *sound);
+            return ma_sound_init_from_data_source(GetMiniaudioObject(), dataSource, flags, group, sound);
         }
 
 #endif

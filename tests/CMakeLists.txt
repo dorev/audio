@@ -11,6 +11,11 @@ add_executable(${PROJECT_NAME}
     ../miniaudio.hpp
 )
 
+# Set Visual Studio working directory to find tests files properly
+set_target_properties(${PROJECT_NAME} PROPERTIES
+  VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
 target_include_directories(${PROJECT_NAME}
     PUBLIC ..
     PUBLIC gtest

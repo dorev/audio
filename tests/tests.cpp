@@ -1,6 +1,6 @@
 #include "gtest/src/gtest-all.cc"
 
-#define MACPP_ENABLED_EXTENDED_METHODS
+#define MACPP_ENABLE_EXTENDED_METHODS
 #include "miniaudio.hpp"
 
 #pragma region Tests helpers
@@ -13,12 +13,33 @@ void WaitMs(int milliseconds)
     std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds));
 }
 
-static const char* DefaultTestFilePath = "beat.mp3";
+static const char* BeatMp3 = "beat.mp3";
+static const char* PopMp3 = "pop.mp3";
 
 #pragma endregion
 
 namespace MiniaudioCpp
 {
+
+/**********************************************************************************************************************
+
+Engine tests
+
+**********************************************************************************************************************/
+
+TEST(Engine, CreateSound)
+{
+    Engine engine;
+    ma_result result = engine.Init();
+    EXPECT_EQ(result, MA_SUCCESS);
+    Sound sound;
+    result = engine.InitSoundFromFile(sound, PopMp3);
+    EXPECT_EQ(result, MA_SUCCESS);
+    sound.Start();
+    while (sound.IsPlaying())
+        WaitMs(100);
+    EXPECT_TRUE(sound.AtEnd());
+}
 
 /**********************************************************************************************************************
 
@@ -32,7 +53,7 @@ TEST(Sound, PlayASound)
     engine.Init();
 
     Sound sound;
-    sound.InitFromFile(engine, DefaultTestFilePath);
+    sound.InitFromFile(engine, PopMp3);
 
     ma_result result = sound.Start();
     EXPECT_EQ(result, MA_SUCCESS);
@@ -51,7 +72,7 @@ TEST(Sound, StopASound)
     engine.Init();
 
     Sound sound;
-    sound.InitFromFile(engine, DefaultTestFilePath);
+    sound.InitFromFile(engine, BeatMp3);
 
     ma_result result = sound.Start();
     EXPECT_EQ(result, MA_SUCCESS);
