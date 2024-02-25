@@ -73,8 +73,18 @@ Decoder tests
 TEST(Decoder, FailInitWithEmptyPath)
 {
     Decoder decoder;
-    ma_result result = decoder.Init("");
+    ma_result result = decoder.InitFile("");
     EXPECT_EQ(result, MA_INVALID_ARGS);
+}
+
+TEST(DecoderBase, ReadCallback)
+{
+    FAIL() << "Not yet tested";
+}
+
+TEST(DecoderBase, SeekCallback)
+{
+    FAIL() << "Not yet tested";
 }
 
 } // namespace MiniaudioCpp

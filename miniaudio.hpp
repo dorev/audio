@@ -89,6 +89,15 @@ namespace MiniaudioCpp
 {
     template <class T>
     using Vector = std::vector<T>;
+
+    template <class T>
+    using SharedPtr = std::shared_ptr<T>;
+
+    template <class T, class... Args>
+    SharedPtr<T> MakeShared(Args&&... args)
+    {
+        return std::make_shared<T>(std::forward<Args>(args)...);
+    }
 }
 
 #endif // MACPP_EXTENDED_METHODS_ENABLED
@@ -113,6 +122,12 @@ namespace MiniaudioCpp
         }
 
     };
+
+/**********************************************************************************************************************
+
+Decoder
+
+**********************************************************************************************************************/
 
     class Decoder : public MiniaudioObject<ma_decoder>
     {
@@ -923,7 +938,52 @@ namespace MiniaudioCpp
 #if MACPP_EXTENDED_METHODS_ENABLED
 
 public:
-private:
+#ifndef MA_NO_RESOURCE_MANAGER
+
+        ma_result InitSoundFromFile(
+            SharedPtr<Sound>& sound,
+            const char* filePath,
+            ma_uint32 flags = 0,
+            ma_sound_group* group = nullptr,
+            ma_fence* fence = nullptr
+        )
+        {
+            return ma_sound_init_from_file(GetMiniaudioObject(), filePath, flags, group, fence, *sound);
+        }
+
+        ma_result InitSoundFromFile(
+            SharedPtr<Sound>& sound,
+            const wchar_t* filePath,
+            ma_uint32 flags = 0,
+            ma_sound_group* group = nullptr,
+            ma_fence* fence = nullptr
+        )
+        {
+            return ma_sound_init_from_file_w(GetMiniaudioObject(), filePath, flags, group, fence, *sound);
+        }
+
+        ma_result InitSoundCopy(
+            SharedPtr<Sound>& sound,
+            const SharedPtr<Sound>& otherSound,
+            ma_uint32 flags = 0,
+            ma_sound_group* group = nullptr,
+            ma_fence* fence = nullptr
+        )
+        {
+            return ma_sound_init_copy(GetMiniaudioObject(), *otherSound, flags, group, *sound);
+        }
+
+#endif // MA_NO_RESOURCE_MANAGER
+
+        ma_result InitFromDataSource(
+            SharedPtr<Sound>& sound,
+            ma_data_source* dataSource,
+            ma_uint32 flags = 0,
+            ma_sound_group* group = nullptr
+        )
+        {
+            return ma_sound_init_from_data_source(GetMiniaudioObject()), dataSource, flags, group, *sound);
+        }
 
 #endif
 
