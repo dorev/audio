@@ -98,12 +98,12 @@ TEST(Decoder, FailInitWithEmptyPath)
     EXPECT_EQ(result, MA_INVALID_ARGS);
 }
 
-TEST(DecoderBase, ReadCallback)
+TEST(CustomDecoderBase, ReadCallback)
 {
     FAIL() << "Not yet tested";
 }
 
-TEST(DecoderBase, SeekCallback)
+TEST(CustomDecoderBase, SeekCallback)
 {
     FAIL() << "Not yet tested";
 }
