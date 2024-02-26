@@ -59,7 +59,7 @@ MiniaudioCpp config
 
 #define MACPP_VERSION_MAJOR    0
 #define MACPP_VERSION_MINOR    0
-#define MACPP_VERSION_REVISION 0
+#define MACPP_VERSION_REVISION 1
 #define MACPP_VERSION_STRING   MA_XSTRINGIFY(MACPP_VERSION_MAJOR) "." MA_XSTRINGIFY(MACPP_VERSION_MINOR) "." MA_XSTRINGIFY(MACPP_VERSION_REVISION)
 
 /* Extended methods refer to addition that were made on top of the `miniaudio` API. */
@@ -624,7 +624,6 @@ Decoder
         ma_node_graph _Graph;
     };
 
-    // TODO: check if API wrapper is complete
     class CustomDeviceBase : public MiniaudioObject<ma_device>
     {
     public:

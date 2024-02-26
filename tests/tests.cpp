@@ -32,12 +32,15 @@ TEST(Engine, CreateSound)
     Engine engine;
     ma_result result = engine.Init();
     EXPECT_EQ(result, MA_SUCCESS);
+
     Sound sound;
     result = engine.InitSoundFromFile(sound, PopMp3);
     EXPECT_EQ(result, MA_SUCCESS);
+
     sound.Start();
     while (sound.IsPlaying())
         WaitMs(100);
+
     EXPECT_TRUE(sound.AtEnd());
 }
 
@@ -54,14 +57,12 @@ TEST(Sound, PlayASound)
 
     Sound sound;
     sound.InitFromFile(engine, PopMp3);
-
     ma_result result = sound.Start();
     EXPECT_EQ(result, MA_SUCCESS);
     EXPECT_TRUE(sound.IsPlaying());
 
-    while (sound.IsPlaying()) {
+    while (sound.IsPlaying())
         WaitMs(100);
-    }
 
     EXPECT_TRUE(sound.AtEnd());
 }
