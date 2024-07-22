@@ -1,5 +1,14 @@
 #pragma once
 
+/*
+
+Roadmap
+
+* Complete making wrappers of miniaudio classes (also to improve my understanding of the engine)
+* Add base classes for `ma_resource_manager`, `ma_context`, `ma_backend`
+
+*/
+
 /**********************************************************************************************************************
 
 `miniaudio` configuration
@@ -27,7 +36,7 @@ MiniaudioCpp macros
 **********************************************************************************************************************/
 
 #define MACPP_CHECK_RESULT(result) { ma_result __result__ = result; if (__result__ != MA_SUCCESS) { return __result__; } }
-#define UNUSED(variable) (void)variable
+#define MACPP_UNUSED(variable) (void)variable
 
 #if defined(_MSC_VER)
     #define MACPP_DEBUG_BREAK() __debugbreak()
@@ -44,12 +53,7 @@ MiniaudioCpp macros
 #define MACPP_LOG_WARNING(format, ...) printf("[MACPP - WARNING] " format "  {%s}\n", MACPP_FUNCTION, ##__VA_ARGS__)
 #define MACPP_LOG_ERROR(format, ...) printf("[MACPP - ERROR] " format "  {%s, %s l.%d}\n", MACPP_FUNCTION, ##__VA_ARGS__, __FILE__, __LINE__)
 
-#define MACPP_DEBUG_ASSERT(condition, format, ...) \
-if (!(condition)) \
-{ \
-    MACPP_LOG("[ASSERT] " format "\n", ##__VA_ARGS__); \
-    MACPP_DEBUG_BREAK(); \
-}
+#define MACPP_DEBUG_ASSERT(condition, format, ...) if (!(condition)) { MACPP_LOG("[ASSERT] " format "\n", ##__VA_ARGS__); MACPP_DEBUG_BREAK(); }
 
 /**********************************************************************************************************************
 
@@ -118,7 +122,17 @@ namespace MiniaudioCpp
 
         virtual T* GetMiniaudioObject() = 0;
 
+        const T* GetMiniaudioObject() const
+        {
+            return GetMiniaudioObject();
+        }
+
         operator T*()
+        {
+            return GetMiniaudioObject();
+        }
+
+        operator const T*() const
         {
             return GetMiniaudioObject();
         }
@@ -352,6 +366,12 @@ Decoder
         }
     };
 
+/**********************************************************************************************************************
+
+Node
+
+**********************************************************************************************************************/
+
     // TODO: make a standard type wrapper, then a CustomBase derived class
     class NodeBase : public MiniaudioObject<ma_node>
     {
@@ -438,6 +458,12 @@ Decoder
             void* thisNode;
         } _Proxy;
     };
+
+/**********************************************************************************************************************
+
+DataSource
+
+**********************************************************************************************************************/
 
     // TODO: make a standard type wrapper, then a CustomBase derived class
     class DataSourceBase : public MiniaudioObject<ma_data_source>
@@ -556,10 +582,22 @@ Decoder
         } _Proxy;
     };
 
+
+/**********************************************************************************************************************
+
+DataSourceNode
+
+**********************************************************************************************************************/
+
     // TODO: check if API wrapper is complete
     class DataSourceNode : public MiniaudioObject<ma_data_source_node>
     {
     public:
+        ma_data_source_node* GetMiniaudioObject()
+        {
+            return &_DataSourceNode;
+        }
+
         // TODO: complete configuration parameters access
         ma_result Init(
             ma_data_source* dataSource,
@@ -568,25 +606,26 @@ Decoder
         )
         {
             ma_data_source_node_config config = ma_data_source_node_config_init(dataSource);
-            return ma_data_source_node_init(graph, &config, allocationCallbacks, &_DataSourceNode);
+            return ma_data_source_node_init(graph, &config, allocationCallbacks, GetMiniaudioObject());
         }
 
         ~DataSourceNode()
         {
-            ma_data_source_node_uninit(&_DataSourceNode, nullptr);
-        }
-
-        ma_data_source_node* GetMiniaudioObject()
-        {
-            return &_DataSourceNode;
+            ma_data_source_node_uninit(GetMiniaudioObject(), nullptr);
         }
 
     private:
         ma_data_source_node _DataSourceNode;
     };
 
+/**********************************************************************************************************************
+
+NodeGraph
+
+**********************************************************************************************************************/
+
     // TODO: check if API wrapper is complete
-    class Graph : public MiniaudioObject<ma_node_graph>
+    class NodeGraph : public MiniaudioObject<ma_node_graph>
     {
     public:
         ma_node_graph* GetMiniaudioObject()
@@ -602,12 +641,12 @@ Decoder
         {
             ma_node_graph_config config = ma_node_graph_config_init(channelCount);
             config.nodeCacheCapInFrames = nodeCacheCapInFrames;
-            return ma_node_graph_init(&config, allocationCallbacks, &_Graph);
+            return ma_node_graph_init(&config, allocationCallbacks, GetMiniaudioObject());
         }
 
         ma_result Read(void* renderBuffer, size_t frameCount, size_t* framesRead)
         {
-            return ma_node_graph_read_pcm_frames(&_Graph, renderBuffer, frameCount, framesRead);
+            return ma_node_graph_read_pcm_frames(GetMiniaudioObject(), renderBuffer, frameCount, framesRead);
         }
 
         ma_result DetachNodeFull(ma_node* node)
@@ -617,16 +656,25 @@ Decoder
 
         ma_result AttachToEndpoint(ma_node* node)
         {
-            return ma_node_attach_output_bus(node, 0,  ma_node_graph_get_endpoint(&_Graph), 0);
+            return ma_node_attach_output_bus(node, 0,  ma_node_graph_get_endpoint(GetMiniaudioObject()), 0);
         }
 
     private:
         ma_node_graph _Graph;
     };
 
-    class CustomDeviceBase : public MiniaudioObject<ma_device>
+/**********************************************************************************************************************
+
+Device
+
+**********************************************************************************************************************/
+
+    class DeviceBase : public MiniaudioObject<ma_device>
     {
     public:
+        // Explicitely bringing the `const` version from the base class in scope
+        using MiniaudioObject<ma_device>::GetMiniaudioObject;
+
         ma_device* GetMiniaudioObject()
         {
             return &_Device;
@@ -643,91 +691,91 @@ Decoder
         )
         {
             _Config = config;
-            _Config.dataCallback = CustomDeviceBase::StaticDataCallback;
+            _Config.dataCallback = DeviceBase::StaticDataCallback;
             _Config.pUserData = this;
 
-            return ma_device_init(context, &_Config, &_Device);
+            return ma_device_init(context, &_Config, GetMiniaudioObject());
         }
 
-        virtual ~CustomDeviceBase()
+        virtual ~DeviceBase()
         {
-            ma_device_uninit(&_Device);
+            ma_device_uninit(GetMiniaudioObject());
         }
 
         ma_result Start()
         {
-            return ma_device_start(&_Device);
+            return ma_device_start(GetMiniaudioObject());
         }
 
         ma_result Stop()
         {
-            return ma_device_stop(&_Device);
+            return ma_device_stop(GetMiniaudioObject());
         }
 
         ma_result InitEx(const ma_backend backends[], ma_uint32 backendCount, const ma_context_config* contextConfig, const ma_device_config* deviceConfig)
         {
             _Config = *deviceConfig;
-            return ma_device_init_ex(backends, backendCount, contextConfig, &_Config, &_Device);
+            return ma_device_init_ex(backends, backendCount, contextConfig, &_Config, GetMiniaudioObject());
         }
 
         ma_context* GetContext()
         {
-            return ma_device_get_context(&_Device);
+            return ma_device_get_context(GetMiniaudioObject());
         }
 
         ma_log* GetLog()
         {
-            return ma_device_get_log(&_Device);
+            return ma_device_get_log(GetMiniaudioObject());
         }
 
         ma_result GetInfo(ma_device_type type, ma_device_info* deviceInfo)
         {
-            return ma_device_get_info(&_Device, type, deviceInfo);
+            return ma_device_get_info(GetMiniaudioObject(), type, deviceInfo);
         }
 
-        ma_result GetName(ma_device_type type, char* pName, size_t nameCap, size_t* lengthNotIncludingNullTerminator)
+        ma_result GetName(ma_device_type type, char* name, size_t nameMaxSize, size_t* lengthNotIncludingNullTerminator)
         {
-            return ma_device_get_name(&_Device, type, pName, nameCap, lengthNotIncludingNullTerminator);
+            return ma_device_get_name(GetMiniaudioObject(), type, name, nameMaxSize, lengthNotIncludingNullTerminator);
         }
 
         ma_bool32 IsStarted() const
         {
-            return ma_device_is_started(&_Device);
+            return ma_device_is_started(GetMiniaudioObject());
         }
 
         ma_device_state GetState() const
         {
-            return ma_device_get_state(&_Device);
+            return ma_device_get_state(GetMiniaudioObject());
         }
 
         ma_result PostInit(ma_device_type deviceType, const ma_device_descriptor* playbackDescriptor, const ma_device_descriptor* captureDescriptor)
         {
-            return ma_device_post_init(&_Device, deviceType, playbackDescriptor, captureDescriptor);
+            return ma_device_post_init(GetMiniaudioObject(), deviceType, playbackDescriptor, captureDescriptor);
         }
 
         ma_result SetMasterVolume(float volume)
         {
-            return ma_device_set_master_volume(&_Device, volume);
+            return ma_device_set_master_volume(GetMiniaudioObject(), volume);
         }
 
         ma_result GetMasterVolume(float* volume)
         {
-            return ma_device_get_master_volume(&_Device, volume);
+            return ma_device_get_master_volume(GetMiniaudioObject(), volume);
         }
 
         ma_result SetMasterVolumeDb(float gainDB)
         {
-            return ma_device_set_master_volume_db(&_Device, gainDB);
+            return ma_device_set_master_volume_db(GetMiniaudioObject(), gainDB);
         }
 
         ma_result GetMasterVolumeDb(float* gainDB)
         {
-            return ma_device_get_master_volume_db(&_Device, gainDB);
+            return ma_device_get_master_volume_db(GetMiniaudioObject(), gainDB);
         }
 
         ma_result HandleBackendDataCallback(void* output, const void* input, ma_uint32 frameCount)
         {
-            return ma_device_handle_backend_data_callback(&_Device, output, input, frameCount);
+            return ma_device_handle_backend_data_callback(GetMiniaudioObject(), output, input, frameCount);
         }
 
         static ma_uint32 CalculateBufferSizeInFramesFromDescriptor(const ma_device_descriptor* descriptor, ma_uint32 nativeSampleRate, ma_performance_profile performanceProfile)
@@ -738,14 +786,14 @@ Decoder
         virtual void DataCallback(void* renderBuffer, const void* captureBuffer, ma_uint32 frameCount) = 0;
 
     private:
-        static CustomDeviceBase* CastToThis(ma_device* device)
+        static DeviceBase* CastToThis(ma_device* device)
         {
-            return reinterpret_cast<CustomDeviceBase*>(device->pUserData);
+            return reinterpret_cast<DeviceBase*>(device->pUserData);
         }
 
         static void StaticDataCallback(ma_device* device, void* renderBuffer, const void* captureBuffer, ma_uint32 frameCount)
         {
-            if (CustomDeviceBase* deviceBase = CastToThis(device)) {
+            if (DeviceBase* deviceBase = CastToThis(device)) {
                 deviceBase->DataCallback(renderBuffer, captureBuffer, frameCount);
             }
         }
@@ -754,6 +802,12 @@ Decoder
         ma_device_config _Config;
         ma_device _Device;
     };
+
+/**********************************************************************************************************************
+
+Context
+
+**********************************************************************************************************************/
 
     class Context : public MiniaudioObject<ma_context>
     {
@@ -802,6 +856,12 @@ Decoder
         ma_context _Context;
         ma_context_config _Config;
     };
+
+/**********************************************************************************************************************
+
+Engine
+
+**********************************************************************************************************************/
 
     class Engine : public MiniaudioObject<ma_engine>
     {
@@ -993,13 +1053,6 @@ Decoder
             return ma_engine_play_sound(GetMiniaudioObject(), filePath, group);
         }
 
-#endif
-
-#if MACPP_EXTENDED_METHODS_ENABLED
-
-public:
-#ifndef MA_NO_RESOURCE_MANAGER
-
         ma_result InitSoundFromFile(
             ma_sound* sound,
             const char* filePath,
@@ -1045,11 +1098,15 @@ public:
             return ma_sound_init_from_data_source(GetMiniaudioObject(), dataSource, flags, group, sound);
         }
 
-#endif
-
     private:
         ma_engine _Engine;
     };
+
+/**********************************************************************************************************************
+
+Sound
+
+**********************************************************************************************************************/
 
     class Sound : public MiniaudioObject<ma_sound>
     {
