@@ -5,7 +5,32 @@
 Roadmap
 
 * Complete making wrappers of miniaudio classes (also to improve my understanding of the engine)
-* Add base classes for `ma_resource_manager`, `ma_context`, `ma_backend`
+
+    // Audio engine & authoring
+    * Engine            DONE!
+    * Sound             DONE!
+    * Encoder           NEXT MILESTONE
+    * Decoder           DONE!
+    * DecoderBase       DONE!
+    * NodeBase          DONE!
+    * DataSourceBase    DONE!
+    * DataSourceNode    TBD...
+    * NodeGraph         TBD...
+
+    This backend part should probably be done in a second part to maintain motivation!
+    vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+
+    // Backend
+    * Device            DONE!
+    * Context           NEXT MILESTONE
+    * ResourceManager   NEXT MILESTONE
+    * VFS               NEXT MILESTONE
+    * Backend           NEXT MILESTONE
+
+What's a reasonable side project to do with that?
+    * OSC nodes with exposed parameters
+    * Convolution reverb
+    * IMGUI interface
 
 */
 
@@ -381,18 +406,13 @@ Node
             return reinterpret_cast<ma_node*>(&_Proxy);
         }
 
-        NodeBase(
-            ma_node_graph* graph,
-            size_t inputBusCount = 0,
-            size_t outputBusCount = 0,
-            ma_uint32 flags = 0
-        )
+        NodeBase()
             : _VTable {
                 NodeBase::ProcessCallback,
                 NodeBase::GetRequiredInputFrameCountCallback,
                 0, // inputBusCount
                 0, // outputBusCount
-                0  // flags
+                0 // flags
             }
         {
             _Proxy.thisNode = this;
@@ -402,9 +422,12 @@ Node
             ma_node_graph* graph,
             ma_uint8 inputBusCount = 0,
             ma_uint8 outputBusCount = 0,
-            ma_uint32 flags = 0
+            ma_uint32 flags = 0,
+            ma_allocation_callbacks* allocationCallbacks = nullptr
         )
         {
+            _AllocationCallbacks = allocationCallbacks;
+            _Graph = graph;
             _VTable.inputBusCount = inputBusCount;
             _VTable.outputBusCount = outputBusCount;
             _VTable.flags = flags;
@@ -414,12 +437,12 @@ Node
             config.inputBusCount = inputBusCount;
             config.outputBusCount = outputBusCount;
 
-            return ma_node_init(graph, &config, nullptr, GetMiniaudioObject());
+            return ma_node_init(graph, &config, _AllocationCallbacks, GetMiniaudioObject());
         }
 
         virtual ~NodeBase()
         {
-            ma_node_uninit(GetMiniaudioObject(), nullptr);
+            ma_node_uninit(GetMiniaudioObject(), _AllocationCallbacks);
         }
 
     protected:
@@ -451,6 +474,7 @@ Node
     private:
         ma_node_vtable _VTable;
         ma_node_graph* _Graph;
+        ma_allocation_callbacks* _AllocationCallbacks;
 
         struct Proxy
         {
@@ -474,7 +498,7 @@ DataSource
             return reinterpret_cast<ma_data_source*>(&_Proxy);
         }
 
-        DataSourceBase(ma_uint32 flags = 0)
+        DataSourceBase()
             : _VTable {
                 DataSourceBase::StaticRead,
                 DataSourceBase::StaticSeek,
