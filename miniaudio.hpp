@@ -12,9 +12,9 @@ Roadmap
     * Encoder           NEXT MILESTONE
     * Decoder           DONE!
     * DecoderBase       DONE!
-    * NodeBase          DONE!
-    * DataSourceBase    DONE!
-    * DataSourceNode    TBD...
+    * NodeBase          TBD?
+    * DataSourceBase    TBD?
+    * DataSourceNode    DONE!
     * NodeGraph         TBD...
 
     This backend part should probably be done in a second part to maintain motivation!
@@ -199,7 +199,7 @@ Decoder
         )
         {
             _Config = config;
-            return ma_decoder_init_file(filePath, &_Config, &_Decoder);
+            return ma_decoder_init_file(filePath, &_Config, GetMiniaudioObject());
         }
 
         static ma_result DecodeFromVFS(
@@ -240,7 +240,7 @@ Decoder
         )
         {
             _Config = config;
-            return ma_decoder_init_file_w(filePath, &_Config, &_Decoder);
+            return ma_decoder_init_file_w(filePath, &_Config, GetMiniaudioObject());
         }
 
         ma_result InitMemory(
@@ -250,7 +250,7 @@ Decoder
         )
         {
             _Config = config;
-            return ma_decoder_init_memory(data, dataSize, &_Config, &_Decoder);
+            return ma_decoder_init_memory(data, dataSize, &_Config, GetMiniaudioObject());
         }
 
         ma_result InitVFS(
@@ -260,7 +260,7 @@ Decoder
         )
         {
             _Config = config;
-            return ma_decoder_init_vfs(vfs, filePath, &_Config, &_Decoder);
+            return ma_decoder_init_vfs(vfs, filePath, &_Config, GetMiniaudioObject());
         }
 
         ma_result InitVFS(
@@ -270,37 +270,37 @@ Decoder
         )
         {
             _Config = config;
-            return ma_decoder_init_vfs_w(vfs, filePath, &_Config, &_Decoder);
+            return ma_decoder_init_vfs_w(vfs, filePath, &_Config, GetMiniaudioObject());
         }
 
         ma_result ReadPCMFrames(void* buffer, ma_uint64 frameCount, ma_uint64* framesRead)
         {
-            return ma_decoder_read_pcm_frames(&_Decoder, buffer, frameCount, framesRead);
+            return ma_decoder_read_pcm_frames(GetMiniaudioObject(), buffer, frameCount, framesRead);
         };
 
         ma_result SeekToPCMFrame(ma_uint64 targetFrame)
         {
-            return ma_decoder_seek_to_pcm_frame(&_Decoder, targetFrame);
+            return ma_decoder_seek_to_pcm_frame(GetMiniaudioObject(), targetFrame);
         }
         
         ma_result GetAvailableFrames(ma_uint64* availableFrames)
         {
-            return ma_decoder_get_available_frames(&_Decoder, availableFrames);
+            return ma_decoder_get_available_frames(GetMiniaudioObject(), availableFrames);
         }
 
         ma_result GetCursorInPCMFrames(ma_uint64* cursor)
         {
-            return ma_decoder_get_cursor_in_pcm_frames(&_Decoder, cursor);
+            return ma_decoder_get_cursor_in_pcm_frames(GetMiniaudioObject(), cursor);
         }
 
         ma_result GetLengthInPCMFrames(ma_uint64* length)
         {
-            return ma_decoder_get_length_in_pcm_frames(&_Decoder, length);
+            return ma_decoder_get_length_in_pcm_frames(GetMiniaudioObject(), length);
         }
 
         ma_result GetDataFormat(ma_format* format, ma_uint32* channels, ma_uint32* sampleRate, ma_channel* channelMap, size_t channelMapCap)
         {
-            return ma_decoder_get_data_format(&_Decoder, format, channels, sampleRate, channelMap, channelMapCap);
+            return ma_decoder_get_data_format(GetMiniaudioObject(), format, channels, sampleRate, channelMap, channelMapCap);
         }
 
 #if MACPP_EXTENDED_METHODS_ENABLED
@@ -397,8 +397,7 @@ Node
 
 **********************************************************************************************************************/
 
-    // TODO: make a standard type wrapper, then a CustomBase derived class
-    class NodeBase : public MiniaudioObject<ma_node>
+    class Node : public MiniaudioObject<ma_node>
     {
     public:
         ma_node* GetMiniaudioObject()
@@ -406,10 +405,162 @@ Node
             return reinterpret_cast<ma_node*>(&_Proxy);
         }
 
-        NodeBase()
+        const ma_node_config* GetConfig() const
+        {
+            return &_Config;
+        }
+
+        ma_node_config* GetConfig()
+        {
+            return &_Config;
+        }
+
+        ma_node_graph* GetGraph()
+        {
+            return _Graph;
+        }
+
+        ma_result Init(
+            ma_node_graph* nodeGraph,
+            ma_node_config config = ma_node_config_init(),
+            const ma_allocation_callbacks* allocationCallbacks = nullptr
+        )
+        {
+            _Config = config;
+            _Graph = nodeGraph;
+            _AllocationCallbacks = allocationCallbacks;
+            return ma_node_init(GetGraph(), GetConfig(), _AllocationCallbacks, GetMiniaudioObject());
+        }
+
+        ma_result GetHeapSize(size_t* heapSizeInBytes)
+        {
+            return ma_node_get_heap_size(GetGraph(), GetConfig(), heapSizeInBytes);
+        }
+
+        ma_result InitPreallocated(void* heap)
+        {
+            return ma_node_init_preallocated(GetGraph(), GetConfig(), heap, GetMiniaudioObject());
+        }
+
+        void Uninit()
+        {
+            ma_node_uninit(GetMiniaudioObject(), _AllocationCallbacks);
+        }
+
+        ma_node_graph* GetNodeGraph()
+        {
+            return ma_node_get_node_graph(GetMiniaudioObject());
+        }
+
+        ma_uint32 GetInputBusCount()
+        {
+            return ma_node_get_input_bus_count(GetMiniaudioObject());
+        }
+
+        ma_uint32 GetOutputBusCount()
+        {
+            return ma_node_get_output_bus_count(GetMiniaudioObject());
+        }
+
+        ma_uint32 GetInputChannels(ma_uint32 inputBusIndex)
+        {
+            return ma_node_get_input_channels(GetMiniaudioObject(), inputBusIndex);
+        }
+
+        ma_uint32 GetOutputChannels(ma_uint32 outputBusIndex)
+        {
+            return ma_node_get_output_channels(GetMiniaudioObject(), outputBusIndex);
+        }
+
+        ma_result AttachOutputBus(
+            ma_uint32 outputBusIndex,
+            ma_node* otherNode,
+            ma_uint32 otherNodeInputBusIndex
+        )
+        {
+            return ma_node_attach_output_bus(GetMiniaudioObject(), outputBusIndex, otherNode, otherNodeInputBusIndex);
+        }
+
+        ma_result DetachOutputBus(ma_uint32 outputBusIndex)
+        {
+            return ma_node_detach_output_bus(GetMiniaudioObject(), outputBusIndex);
+        }
+
+        ma_result DetachAllOutputBuses()
+        {
+            return ma_node_detach_all_output_buses(GetMiniaudioObject());
+        }
+
+        ma_result SetOutputBusVolume(ma_uint32 outputBusIndex, float volume)
+        {
+            return ma_node_set_output_bus_volume(GetMiniaudioObject(), outputBusIndex, volume);
+        }
+
+        float GetOutputBusVolume(ma_uint32 outputBusIndex)
+        {
+            return ma_node_get_output_bus_volume(GetMiniaudioObject(), outputBusIndex);
+        }
+
+        ma_result SetState(ma_node_state state)
+        {
+            return ma_node_set_state(GetMiniaudioObject(), state);
+        }
+
+        ma_node_state GetState()
+        {
+            return ma_node_get_state(GetMiniaudioObject());
+        }
+
+        ma_result SetStateTime(ma_node_state state, ma_uint64 globalTime)
+        {
+            return ma_node_set_state_time(GetMiniaudioObject(), state, globalTime);
+        }
+
+        ma_uint64 GetStateTime(ma_node_state state)
+        {
+            return ma_node_get_state_time(GetMiniaudioObject(), state);
+        }
+
+        ma_node_state GetStateByTime(ma_uint64 globalTime)
+        {
+            return ma_node_get_state_by_time(GetMiniaudioObject(), globalTime);
+        }
+
+        ma_node_state GetStateByTimeRange(ma_uint64 globalTimeBeg, ma_uint64 globalTimeEnd)
+        {
+            return ma_node_get_state_by_time_range(GetMiniaudioObject(), globalTimeBeg, globalTimeEnd);
+        }
+
+        ma_uint64 GetTime()
+        {
+            return ma_node_get_time(GetMiniaudioObject());
+        }
+
+        ma_result SetTime(ma_uint64 localTime)
+        {
+            return ma_node_set_time(GetMiniaudioObject(), localTime);
+        }
+
+    protected:
+        struct Proxy
+        {
+            ma_node_base base;
+            void* thisNode;
+        } _Proxy;
+
+        ma_node_graph* _Graph;
+        ma_node_config _Config;
+        const ma_allocation_callbacks* _AllocationCallbacks;
+    };
+
+
+    class CustomNodeBase : public Node
+    {
+    public:
+        CustomNodeBase()
             : _VTable {
-                NodeBase::ProcessCallback,
-                NodeBase::GetRequiredInputFrameCountCallback,
+                CustomNodeBase::ProcessCallback,
+                CustomNodeBase::GetRequiredInputFrameCountCallback,
                 0, // inputBusCount
                 0, // outputBusCount
                 0 // flags
@@ -432,17 +583,11 @@ Node
             _VTable.outputBusCount = outputBusCount;
             _VTable.flags = flags;
 
-            ma_node_config config = ma_node_config_init();
-            config.vtable = &_VTable;
-            config.inputBusCount = inputBusCount;
-            config.outputBusCount = outputBusCount;
+            GetConfig()->vtable = &_VTable;
+            GetConfig()->inputBusCount = inputBusCount;
+            GetConfig()->outputBusCount = outputBusCount;
 
-            return ma_node_init(graph, &config, _AllocationCallbacks, GetMiniaudioObject());
-        }
-
-        virtual ~NodeBase()
-        {
-            ma_node_uninit(GetMiniaudioObject(), _AllocationCallbacks);
+            return ma_node_init(GetGraph(), GetConfig(), _AllocationCallbacks, GetMiniaudioObject());
         }
 
     protected:
@@ -450,21 +595,21 @@ Node
         virtual ma_result GetRequiredInputFrameCount(ma_uint32 outputFrameCount, ma_uint32* inputFrameCount) = 0;
 
     private:
-        static NodeBase* CastToThis(ma_node* node)
+        static CustomNodeBase* CastToThis(ma_node* node)
         {
-            return static_cast<NodeBase*>(reinterpret_cast<NodeBase::Proxy*>(node)->thisNode);
+            return static_cast<CustomNodeBase*>(reinterpret_cast<CustomNodeBase::Proxy*>(node)->thisNode);
         }
 
         static void ProcessCallback(ma_node* node, const float** inputBuffers, ma_uint32* inputFrameCount, float** outputBuffers, ma_uint32* outputFrameCount)
         {
-            if (NodeBase* nodeBase = CastToThis(node)) {
+            if (CustomNodeBase* nodeBase = CastToThis(node)) {
                 nodeBase->Process(inputBuffers, inputFrameCount, outputBuffers, outputFrameCount);
             }
         }
 
         static ma_result GetRequiredInputFrameCountCallback(ma_node* node, ma_uint32 outputFrameCount, ma_uint32* inputFrameCount)
         {
-            if (NodeBase* nodeBase = CastToThis(node)) {
+            if (CustomNodeBase* nodeBase = CastToThis(node)) {
                 return nodeBase->GetRequiredInputFrameCount(outputFrameCount, inputFrameCount);
             }
 
@@ -473,14 +618,6 @@ Node
 
     private:
         ma_node_vtable _VTable;
-        ma_node_graph* _Graph;
-        ma_allocation_callbacks* _AllocationCallbacks;
-
-        struct Proxy
-        {
-            ma_node_base base;
-            void* thisNode;
-        } _Proxy;
     };
 
 /**********************************************************************************************************************
@@ -613,7 +750,6 @@ DataSourceNode
 
 **********************************************************************************************************************/
 
-    // TODO: check if API wrapper is complete
     class DataSourceNode : public MiniaudioObject<ma_data_source_node>
     {
     public:
@@ -622,15 +758,16 @@ DataSourceNode
             return &_DataSourceNode;
         }
 
-        // TODO: complete configuration parameters access
         ma_result Init(
             ma_data_source* dataSource,
             ma_node_graph* graph,
+            ma_node_config config = ma_node_config_init(),
             ma_allocation_callbacks* allocationCallbacks = nullptr
         )
         {
-            ma_data_source_node_config config = ma_data_source_node_config_init(dataSource);
-            return ma_data_source_node_init(graph, &config, allocationCallbacks, GetMiniaudioObject());
+            ma_data_source_node_config dataSourceNodeConfig = ma_data_source_node_config_init(dataSource);
+            dataSourceNodeConfig.nodeConfig  = config;
+            return ma_data_source_node_init(graph, &dataSourceNodeConfig, allocationCallbacks, GetMiniaudioObject());
         }
 
         ~DataSourceNode()
@@ -638,8 +775,19 @@ DataSourceNode
             ma_data_source_node_uninit(GetMiniaudioObject(), nullptr);
         }
 
+        ma_result SetIsLooping(bool isLooping)
+        {
+            return ma_data_source_node_set_looping(GetMiniaudioObject(), isLooping);
+        }
+
+        bool IsLooping()
+        {
+            return ma_data_source_node_is_looping(GetMiniaudioObject());
+        }
+
     private:
         ma_data_source_node _DataSourceNode;
+        ma_node_graph _Graph;
     };
 
 /**********************************************************************************************************************
