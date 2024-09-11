@@ -15,7 +15,7 @@ Roadmap
     * NodeBase          TBD?
     * DataSourceBase    TBD?
     * DataSourceNode    DONE!
-    * NodeGraph         TBD...
+    * NodeGraph         DONE!
 
     This backend part should probably be done in a second part to maintain motivation!
     vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
@@ -796,7 +796,6 @@ NodeGraph
 
 **********************************************************************************************************************/
 
-    // TODO: check if API wrapper is complete
     class NodeGraph : public MiniaudioObject<ma_node_graph>
     {
     public:
@@ -813,26 +812,43 @@ NodeGraph
         {
             ma_node_graph_config config = ma_node_graph_config_init(channelCount);
             config.nodeCacheCapInFrames = nodeCacheCapInFrames;
+            _AllocationCallbacks = allocationCallbacks;
             return ma_node_graph_init(&config, allocationCallbacks, GetMiniaudioObject());
         }
 
-        ma_result Read(void* renderBuffer, size_t frameCount, size_t* framesRead)
+        ~NodeGraph()
+        {
+            ma_node_graph_uninit(GetMiniaudioObject(), _AllocationCallbacks);
+        }
+
+        ma_node* GetEndpoint()
+        {
+            return ma_node_graph_get_endpoint(GetMiniaudioObject());
+        }
+
+        ma_result ReadPCMFrames(void* renderBuffer, size_t frameCount, size_t* framesRead)
         {
             return ma_node_graph_read_pcm_frames(GetMiniaudioObject(), renderBuffer, frameCount, framesRead);
         }
 
-        ma_result DetachNodeFull(ma_node* node)
+        ma_uint32 GetChannels()
         {
-            return ma_node_detach_full(node);
+            return ma_node_graph_get_channels(GetMiniaudioObject());
         }
 
-        ma_result AttachToEndpoint(ma_node* node)
+        ma_uint64 GetTime()
         {
-            return ma_node_attach_output_bus(node, 0,  ma_node_graph_get_endpoint(GetMiniaudioObject()), 0);
+            return ma_node_graph_get_time(GetMiniaudioObject());
+        }
+
+        ma_result SetTime(ma_uint64 globalTime)
+        {
+            return ma_node_graph_set_time(GetMiniaudioObject(), globalTime);
         }
 
     private:
         ma_node_graph _Graph;
+        const ma_allocation_callbacks* _AllocationCallbacks;
     };
 
 /**********************************************************************************************************************
